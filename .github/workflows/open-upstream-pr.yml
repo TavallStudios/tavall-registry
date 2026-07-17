@@ -48,12 +48,12 @@ jobs:
             exit 0
           fi
 
-          existing_pr="$(gh pr list \
-            --repo "${upstream}" \
-            --base main \
-            --head "${head}" \
-            --state open \
-            --json number \
+          existing_pr="$(gh api \
+            --method GET \
+            "repos/${upstream}/pulls" \
+            -f state=open \
+            -f base=main \
+            -f head="${head}" \
             --jq '.[0].number // empty')"
 
           if [[ -n "${existing_pr}" ]]; then
