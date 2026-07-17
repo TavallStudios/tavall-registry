@@ -1,0 +1,72 @@
+name: Open upstream PR from personal fork
+
+on:
+  push:
+    branches-ignore:
+      - "sync/**"
+      - "upstream/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-upstream-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  open-upstream-pr:
+    if: github.repository_owner == 'tjXJNOOBIE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out pushed branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Open or update TavallStudios pull request
+        env:
+          GH_TOKEN: ${{ secrets.TAVALL_UPSTREAM_PR_TOKEN }}
+        run: |
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Add the TAVALL_UPSTREAM_PR_TOKEN Actions secret to this personal fork."
+            exit 1
+          fi
+
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          upstream="TavallStudios/${repository_name}"
+          head="${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF_NAME}"
+
+          git fetch --no-tags "https://github.com/${upstream}.git" \
+            main:refs/remotes/upstream/main
+          git merge-base HEAD refs/remotes/upstream/main >/dev/null
+
+          if git diff --quiet refs/remotes/upstream/main...HEAD; then
+            echo "No personal changes to propose upstream."
+            exit 0
+          fi
+
+          existing_pr="$(gh pr list \
+            --repo "${upstream}" \
+            --base main \
+            --head "${head}" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [[ -n "${existing_pr}" ]]; then
+            echo "Upstream PR #${existing_pr} already tracks this branch."
+            exit 0
+          fi
+
+          body="$(printf 'Automatically opened after a push to %s:%s.\n\nFurther pushes to this branch update the same pull request. Review and mark it ready when the change is complete.' \
+            "${GITHUB_REPOSITORY}" "${GITHUB_REF_NAME}")"
+          gh pr create \
+            --repo "${upstream}" \
+            --base main \
+            --head "${head}" \
+            --draft \
+            --title "contrib(${repository_name}): merge ${GITHUB_REF_NAME} from ${GITHUB_REPOSITORY_OWNER}" \
+            --body "${body}"
