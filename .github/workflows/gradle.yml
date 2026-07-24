@@ -19,4 +19,13 @@ jobs:
           distribution: temurin
           java-version: "25"
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew --no-daemon clean check publishToMavenLocal
+      - name: Bootstrap canonical Tavall dependencies
+        run: |
+          for repository in tavall-logging tavall-di tavall-cache; do
+            git clone --depth 1 "https://github.com/TavallStudios/${repository}.git" "/tmp/${repository}"
+            "/tmp/${repository}/gradlew" -p "/tmp/${repository}" \
+              --no-daemon --max-workers=1 \
+              -I "$GITHUB_WORKSPACE/gradle/bootstrap-version.init.gradle" \
+              -x test publishToMavenLocal
+          done
+      - run: ./gradlew --no-daemon --max-workers=1 clean check publishToMavenLocal

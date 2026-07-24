@@ -1,0 +1,5 @@
+gradle.afterProject { project, state ->
+    if (!state.failure) {
+        project.version = "1.0.0"
+    }
+}
