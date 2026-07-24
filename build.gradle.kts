@@ -22,6 +22,7 @@ repositories {
 dependencies {
     api("org.tavall:abstract-cache-system:1.0.0")
     api("org.tavall:tavall-di:1.0.0")
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
 }
