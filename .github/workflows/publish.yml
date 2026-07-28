@@ -1,0 +1,61 @@
++name: Publish locked Gradle artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version required by downstream dependency locks
+        required: true
+        default: "1.0.0"
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      TARGET_REPOSITORY: ${{ github.event.repository.name }}
+      TAVALL_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Bootstrap preceding first-party artifacts
+        run: |
+          cat > "$RUNNER_TEMP/tavall-version.init.gradle" <<'GRADLE'
+          gradle.afterProject { project, state ->
+              if (!state.failure) {
+                  project.version = gradle.startParameter.projectProperties["tavallVersion"]
+              }
+          }
+          GRADLE
+          for repository in tavall-logging tavall-concurrency tavall-reflection tavall-di tavall-eventbus tavall-cache tavall-database tavall-registry tavall-scheduler; do
+            if [[ "$repository" == "$TARGET_REPOSITORY" ]]; then
+              break
+            fi
+            git clone --depth 1 "https://github.com/TavallStudios/$repository.git" "$RUNNER_TEMP/$repository"
+            "$RUNNER_TEMP/$repository/gradlew" -p "$RUNNER_TEMP/$repository" \
+              --no-daemon --max-workers=1 \
+              -I "$RUNNER_TEMP/tavall-version.init.gradle" \
+              -PtavallVersion="$TAVALL_VERSION" -x test publishToMavenLocal
+          done
+      - name: Publish to GitHub Packages
+        run: |
+          cat > "$RUNNER_TEMP/tavall-version.init.gradle" <<'GRADLE'
+          gradle.afterProject { project, state ->
+              if (!state.failure) {
+                  project.version = gradle.startParameter.projectProperties["tavallVersion"]
+              }
+          }
+          GRADLE
+          ./gradlew --no-daemon --max-workers=1 \
+            -I "$RUNNER_TEMP/tavall-version.init.gradle" \
+            -PtavallVersion="$TAVALL_VERSION" clean check publish
+
