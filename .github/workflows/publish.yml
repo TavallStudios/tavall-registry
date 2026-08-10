@@ -1,4 +1,4 @@
-+name: Publish locked Gradle artifacts
+name: Publish locked Gradle artifacts
 
 on:
   workflow_dispatch:
