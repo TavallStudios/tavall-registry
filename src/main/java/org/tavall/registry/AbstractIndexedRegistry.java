@@ -11,16 +11,27 @@ import java.util.function.Function;
  * Registry base for values published through one primary key and one or more
  * subclass-owned secondary indexes.
  *
- * <p>Every mutation is serialized through the registry instance. Subclasses
- * validate before publication and implement idempotent index/unindex hooks so
- * a failed index publication can be rolled back without exposing partial
- * registry state.</p>
+ * <p>Every mutation is serialized through the registry instance. Subclasses validate before
+ * publication and implement idempotent index/unindex hooks so a failed index publication can be
+ * rolled back without exposing partial registry state. Standard {@link Map} mutation methods are
+ * overridden to route through the same indexed mutation path, so callers cannot accidentally
+ * update the primary map without maintaining the secondary indexes.</p>
+ *
+ * @param <REG_KEY> type used to identify primary registry entries
+ * @param <REG_DATA> type stored by the registry and published through secondary indexes
  */
 public abstract class AbstractIndexedRegistry<REG_KEY, REG_DATA>
         extends AbstractRegistry<REG_KEY, REG_DATA> {
 
     /**
      * Validates a registration before any primary or secondary state changes.
+     *
+     * <p>Subclasses can reject conflicting secondary keys or other invariant violations here.
+     * Throwing aborts the registration before the current mapping is removed or changed.</p>
+     *
+     * @param registryKey primary key being registered
+     * @param registryData proposed value
+     * @param previousData value currently stored under the key, or {@code null} when absent
      */
     protected void validateRegistration(
             REG_KEY registryKey,
@@ -30,15 +41,41 @@ public abstract class AbstractIndexedRegistry<REG_KEY, REG_DATA>
     }
 
     /**
-     * Publishes all secondary indexes for one already-validated value.
+     * Publishes all subclass-owned secondary indexes for an already validated value.
+     *
+     * <p>The implementation must either complete publication or throw. When it throws, the base
+     * class attempts to unindex the partially published value and restore the previous mapping.</p>
+     *
+     * @param registryKey primary key associated with the value
+     * @param registryData value whose secondary indexes should be published
      */
     protected abstract void index(REG_KEY registryKey, REG_DATA registryData);
 
     /**
-     * Removes all secondary indexes for one value. This hook must be idempotent.
+     * Removes all subclass-owned secondary indexes for a value.
+     *
+     * <p>This hook must be idempotent because rollback may invoke it after only part of an index
+     * publication succeeded.</p>
+     *
+     * @param registryKey primary key associated with the value
+     * @param registryData value whose secondary indexes should be removed
      */
     protected abstract void unindex(REG_KEY registryKey, REG_DATA registryData);
 
+    /**
+     * Registers or replaces a value while keeping primary and secondary indexes consistent.
+     *
+     * <p>Validation happens before mutation. Replacements unindex the previous value, publish the
+     * new primary value, and then publish its secondary indexes. If indexing fails, the method
+     * attempts to remove partial new indexes and restore both the previous primary value and its
+     * indexes before propagating the original failure.</p>
+     *
+     * @param registryKey primary key to register
+     * @param registryData value to register
+     * @return the previous value stored under the key, or {@code null} when the key was absent
+     * @throws NullPointerException if the key or value is {@code null}
+     * @throws RuntimeException if validation or secondary-index publication fails
+     */
     public final synchronized REG_DATA registerIndexed(
             REG_KEY registryKey,
             REG_DATA registryData
@@ -61,6 +98,17 @@ public abstract class AbstractIndexedRegistry<REG_KEY, REG_DATA>
         }
     }
 
+    /**
+     * Removes a registered value and its secondary indexes as one serialized mutation.
+     *
+     * <p>A missing or {@code null} key is treated as a no-op. If the primary mapping changes
+     * unexpectedly after secondary indexes are removed, those indexes are restored and the method
+     * fails rather than leaving the registry inconsistent.</p>
+     *
+     * @param registryKey primary key to remove
+     * @return the removed value, or {@code null} when no mapping existed
+     * @throws IllegalStateException if the primary mapping changes during removal
+     */
     public final synchronized REG_DATA unregisterIndexed(REG_KEY registryKey) {
         if (registryKey == null) {
             return null;
@@ -80,6 +128,15 @@ public abstract class AbstractIndexedRegistry<REG_KEY, REG_DATA>
         return existing;
     }
 
+    /**
+     * Clears all primary entries and secondary indexes while preserving rollback safety.
+     *
+     * <p>Secondary indexes are removed before the primary map is cleared. If unindexing fails,
+     * indexes already removed during this clear attempt are republished in reverse order and the
+     * primary map remains intact.</p>
+     *
+     * @throws RuntimeException if a secondary index cannot be removed or restored
+     */
     public final synchronized void clearIndexed() {
         List<Map.Entry<REG_KEY, REG_DATA>> snapshot = new ArrayList<>(
                 super.entrySet()
