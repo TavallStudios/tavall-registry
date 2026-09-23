@@ -1,22 +1,20 @@
 # Repository instructions
 
-This repository is an authoritative public Tavall Java module.
+This repository is an authoritative standalone Tavall Java module.
 
 ## Source of truth
 
-- `TavallStudios/<repository>:main` is canonical for code, releases, tags, issues, and public review.
-- A matching `tjXJNOOBIE/<repository>` repository is a contribution fork.
-- `TavallMonoRepo` is a private integration workspace, not an alternate source of truth.
-- A change is canonical only after it is merged into this TavallStudios repository.
+- `TavallStudios/tavall-registry:main` is canonical for code, releases, tags, issues, and pull requests.
+- Ordinary development occurs directly in this repository on topic branches (`working/<topic>`).
+- Cross-project engineering and Git workflow policy is governed by `TavallStudios/tavall-docs@main`.
+- `TavallMonoRepo` is a pointer-only submodule aggregate for cross-project integration validation. It does not own, export, or mirror-edit code.
 
 ## Working rules
 
-- For a change limited to this module, work on a branch in a personal fork. Its automation should open or update a draft pull request against this repository.
-- Cross-module work may begin in TavallMonoRepo, but each affected public module still requires its own pull request here.
-- Validate this module independently before merge.
+- Create a focused topic branch (`working/<topic>`) for changes to this module.
+- Validate independently with `./gradlew check` (Java 25).
+- Follow canonical Tavall Git and code architecture standards from `tavall-docs`.
+- Pull requests target `main` and require standard review or owner self-review before merging.
 - Releases, tags, package publication, and issue tracking belong to this repository.
-- Do not force-push `main` or automation-owned `sync/**` branches.
-- Do not overwrite concurrent work. When both the monorepo and public repository changed, use the generated reconciliation pull request and resolve any normal Git conflicts there.
-- Preserve public commit ancestry and automation sync trailers; they are used to find the last shared state.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing the repository workflow.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
