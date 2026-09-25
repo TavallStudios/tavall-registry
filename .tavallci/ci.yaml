@@ -1,0 +1,48 @@
+version: 2
+
+source:
+  repository: TavallStudios/tavall-registry
+  provider: github
+
+build:
+  type: gradle
+  java: 25
+  gradle: 9.6.1
+
+resources:
+  mode: SYSTEM
+
+dependencies:
+  - kind: source
+    identity: TavallStudios/tavall-cache
+    role: SHARED_DEP
+    selector: required-source
+  - kind: source
+    identity: TavallStudios/tavall-di
+    role: SHARED_DEP
+    selector: required-source
+  - kind: source
+    identity: TavallStudios/tavall-logging
+    role: SHARED_DEP
+    selector: required-source
+
+artifacts:
+  - name: tavall-registry
+    path: build/tavall-ci-artifacts/tavall-registry.jar
+
+requiredChecks:
+  - quality
+  - artifact
+
+checks:
+  quality:
+    executor: gradle
+    tasks:
+      - "clean"
+      - "check"
+      - "assemble"
+
+  artifact:
+    executor: gradle
+    tasks:
+      - tavallCiArtifact
