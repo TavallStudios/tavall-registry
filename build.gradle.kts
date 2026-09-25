@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.Copy
 import java.util.zip.ZipFile
 
 plugins {
@@ -82,4 +83,13 @@ publishing {
             }
         }
     }
+}
+
+
+tasks.register<Copy>("tavallCiArtifact") {
+    val binaryJar = tasks.named<Jar>("jar")
+    dependsOn(binaryJar)
+    from(binaryJar.flatMap { it.archiveFile })
+    into(layout.buildDirectory.dir("tavall-ci-artifacts"))
+    rename { "tavall-registry.jar" }
 }

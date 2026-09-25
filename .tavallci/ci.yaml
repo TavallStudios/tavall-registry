@@ -26,8 +26,13 @@ dependencies:
     role: SHARED_DEP
     selector: required-source
 
+artifacts:
+  - name: tavall-registry
+    path: build/tavall-ci-artifacts/tavall-registry.jar
+
 requiredChecks:
   - quality
+  - artifact
 
 checks:
   quality:
@@ -36,3 +41,8 @@ checks:
       - "clean"
       - "check"
       - "assemble"
+
+  artifact:
+    executor: gradle
+    tasks:
+      - tavallCiArtifact
