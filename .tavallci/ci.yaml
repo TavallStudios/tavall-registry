@@ -32,7 +32,6 @@ artifacts:
 
 requiredChecks:
   - quality
-  - artifact
 
 checks:
   quality:
@@ -41,8 +40,10 @@ checks:
       - "clean"
       - "check"
       - "assemble"
+      - tavallCiArtifact
 
   artifact:
     executor: gradle
     tasks:
       - tavallCiArtifact
+    includeInAll: false
