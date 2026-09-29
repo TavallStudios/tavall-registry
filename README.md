@@ -9,3 +9,7 @@ Standalone Tavall Java module providing core infrastructure capabilities.
 - Cross-project engineering and Git workflow policy is governed by [Tavall Docs](https://github.com/TavallStudios/tavall-docs).
 - Validate locally with `./gradlew check` (Java 25).
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines and workflow instructions.
+
+## Consumer Guide
+
+- [Registry Access Styles](docs/REGISTRY_ACCESS_STYLES.md): the ranked, recommended way to own and read a Tavall Registry from consumer code.
