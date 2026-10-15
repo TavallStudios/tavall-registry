@@ -10,6 +10,7 @@ import org.tavall.dependency.annotations.DelegatesTo;
 import org.tavall.dependency.maps.DependencyMap;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1586,6 +1587,296 @@ final class ModuleLifecycleRegistryIntegrationTest {
         // A second reconciliation is a no-op for active roots and keeps the disabled FEATURE off.
         registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
         assertFalse(registry.findModule(engagementId).orElseThrow().isActive());
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Lifecycle Review Regressions (2026-10-15)
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("doLoad invokes participant.onLoadAsync; failing load transitions to FAILED with module_load_failed and closes context")
+    void testDoLoadInvokesOnLoadAsyncAndFailsClosed() {
+        // 1. Successful load invokes onLoadAsync before transitioning to LOADED
+        ModuleId successId = ModuleId.of("load-success-module");
+        List<String> lifecyclePhases = Collections.synchronizedList(new ArrayList<>());
+        registry.registerModule(
+                ModuleDescriptor.builder(successId, ModulePrimaryType.APPLICATION, TARGET).build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onLoadAsync(IModuleContext context) {
+                        lifecyclePhases.add("load");
+                        return CompletableFuture.completedFuture(null);
+                    }
+
+                    @Override
+                    public CompletionStage<Void> onStartAsync(IModuleContext context) {
+                        lifecyclePhases.add("start");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+
+        ModuleLifecycleResult loadResult = registry.load(req(successId, ModuleLifecycleOperation.LOAD, 1L, 0L));
+        assertTrue(loadResult.succeeded());
+        assertEquals(ModuleLifecycleState.LOADED, loadResult.currentState());
+        assertEquals(List.of("load"), lifecyclePhases);
+        assertEquals(ModuleLifecycleState.LOADED, registry.findModule(successId).orElseThrow().state());
+
+        // 2. Failing onLoadAsync transitions to FAILED with module_load_failed and closes context
+        ModuleId failingId = ModuleId.of("load-failure-module");
+        AtomicReference<IModuleContext> capturedContext = new AtomicReference<>();
+        registry.registerModule(
+                ModuleDescriptor.builder(failingId, ModulePrimaryType.APPLICATION, TARGET).build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onLoadAsync(IModuleContext context) {
+                        capturedContext.set(context);
+                        return CompletableFuture.failedFuture(new IllegalStateException("simulated storage failure"));
+                    }
+                }
+        );
+
+        ModuleLifecycleResult failResult = registry.load(req(failingId, ModuleLifecycleOperation.LOAD, 1L, 0L));
+        assertFalse(failResult.succeeded());
+        assertEquals("module_load_failed", failResult.failure().code());
+        assertEquals(ModuleLifecycleState.FAILED, failResult.currentState());
+        assertEquals(ModuleLifecycleState.FAILED, registry.findModule(failingId).orElseThrow().state());
+        assertNotNull(capturedContext.get());
+        // Verify context is closed (cannot register dependencies or allow capabilities)
+        assertThrows(IllegalStateException.class, () ->
+                capturedContext.get().registerDependency(String.class, "closed-test"));
+
+        // 3. Enable on an unloaded module runs implicit load, calling onLoadAsync then onStartAsync
+        ModuleId implicitId = ModuleId.of("implicit-load-module");
+        List<String> implicitPhases = Collections.synchronizedList(new ArrayList<>());
+        registry.registerModule(
+                ModuleDescriptor.builder(implicitId, ModulePrimaryType.APPLICATION, TARGET).build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onLoadAsync(IModuleContext context) {
+                        implicitPhases.add("load");
+                        return CompletableFuture.completedFuture(null);
+                    }
+
+                    @Override
+                    public CompletionStage<Void> onStartAsync(IModuleContext context) {
+                        implicitPhases.add("start");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+
+        ModuleLifecycleResult enableResult = registry.enable(req(implicitId, ModuleLifecycleOperation.ENABLE, 1L, 0L));
+        assertTrue(enableResult.succeeded());
+        assertEquals(ModuleLifecycleState.ENABLED, enableResult.currentState());
+        assertEquals(List.of("load", "start"), implicitPhases);
+
+        // 4. Reload invokes onLoadAsync then onStartAsync for the new generation without double calling onLoadAsync
+        ModuleId reloadId = ModuleId.of("reload-lifecycle-module");
+        List<String> reloadPhases = Collections.synchronizedList(new ArrayList<>());
+        registry.registerModule(
+                ModuleDescriptor.builder(reloadId, ModulePrimaryType.APPLICATION, TARGET)
+                        .reloadSupported(true)
+                        .build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onLoadAsync(IModuleContext context) {
+                        reloadPhases.add("load");
+                        return CompletableFuture.completedFuture(null);
+                    }
+
+                    @Override
+                    public CompletionStage<Void> onStartAsync(IModuleContext context) {
+                        reloadPhases.add("start");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+        long reloadCfg = registry.createSnapshot().configGeneration();
+        assertTrue(registry.enable(req(reloadId, ModuleLifecycleOperation.ENABLE, reloadCfg, 0L)).succeeded());
+        assertEquals(List.of("load", "start"), reloadPhases);
+
+        reloadCfg = registry.createSnapshot().configGeneration();
+        ModuleLifecycleResult reloadResult = registry.reload(req(reloadId, ModuleLifecycleOperation.RELOAD, reloadCfg, 1L));
+        assertTrue(reloadResult.succeeded());
+        assertEquals(List.of("load", "start", "load", "start"), reloadPhases);
+    }
+
+    @Test
+    @DisplayName("SYSTEM child cascade failure records lastFailure on SYSTEM, keeps ENABLED state, and aggregate health reports failed children")
+    void testSystemCascadeEnableFailureRecordsLastFailureAndAggregatesHealth() {
+        ModuleId sysId = ModuleId.of("cascade-sys");
+        ModuleId healthyChildId = ModuleId.of("cascade-healthy-child");
+        ModuleId failingChildId = ModuleId.of("cascade-failing-child");
+
+        registry.registerModule(
+                ModuleDescriptor.builder(sysId, ModulePrimaryType.SYSTEM, TARGET).build(),
+                null
+        );
+        registry.registerModule(
+                ModuleDescriptor.builder(healthyChildId, ModulePrimaryType.FEATURE, TARGET)
+                        .parentSystemId(sysId)
+                        .required(false)
+                        .build(),
+                null
+        );
+        registry.registerModule(
+                ModuleDescriptor.builder(failingChildId, ModulePrimaryType.FEATURE, TARGET)
+                        .parentSystemId(sysId)
+                        .required(false)
+                        .build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onStartAsync(IModuleContext context) {
+                        return CompletableFuture.failedFuture(new RuntimeException("payment gateway connection refused"));
+                    }
+                }
+        );
+
+        // Enable the SYSTEM; child cascade will fail for failingChildId
+        ModuleLifecycleResult sysEnable = registry.enable(req(sysId, ModuleLifecycleOperation.ENABLE, 1L, 0L));
+        assertFalse(sysEnable.succeeded());
+        assertEquals("child_cascade_enable_failed", sysEnable.failure().code());
+
+        // 1. Inspect SYSTEM entry: truthful lifecycle state is ENABLED (it did start), but lastFailure is recorded
+        ModuleSnapshot sysSnapshot = registry.findModule(sysId).orElseThrow();
+        assertEquals(ModuleLifecycleState.ENABLED, sysSnapshot.state(), "SYSTEM own state must stay truthful (it started)");
+        assertTrue(sysSnapshot.failure().isPresent(), "SYSTEM lastFailure must be recorded on entry");
+        assertEquals("child_cascade_enable_failed", sysSnapshot.lastFailure().code());
+        assertEquals(ModuleHealthStatus.DEGRADED, sysSnapshot.health().status());
+
+        // 2. Inspect child entries: healthy child is ENABLED, failing child is FAILED with UNHEALTHY status
+        ModuleSnapshot healthySnapshot = registry.findModule(healthyChildId).orElseThrow();
+        assertEquals(ModuleLifecycleState.ENABLED, healthySnapshot.state());
+
+        ModuleSnapshot failingSnapshot = registry.findModule(failingChildId).orElseThrow();
+        assertEquals(ModuleLifecycleState.FAILED, failingSnapshot.state());
+        assertTrue(failingSnapshot.failure().isPresent());
+        assertEquals(ModuleHealthStatus.UNHEALTHY, failingSnapshot.health().status());
+
+        // 3. Aggregate health reports the failed children
+        ModuleHealth systemAggregateHealth = registry.checkAggregateHealth(Optional.of(sysId));
+        assertEquals(ModuleHealthStatus.DEGRADED, systemAggregateHealth.status());
+        assertTrue(systemAggregateHealth.summary().contains(failingChildId.value()),
+                "Aggregate health summary must report the failed child: " + systemAggregateHealth.summary());
+        assertTrue(systemAggregateHealth.summary().contains("FAILED"),
+                "Aggregate health summary must describe failure condition: " + systemAggregateHealth.summary());
+
+        // Global aggregate health also reports the failed child
+        ModuleHealth globalHealth = registry.checkAggregateHealth(Optional.empty());
+        assertEquals(ModuleHealthStatus.DEGRADED, globalHealth.status());
+        assertTrue(globalHealth.summary().contains(failingChildId.value()));
+    }
+
+    @Test
+    @DisplayName("Shutdown closeAsync disables and unloads in reverse dependency order: dependents before dependencies, children before SYSTEM")
+    void testShutdownClosesInReverseDependencyOrder() throws Exception {
+        ModuleId sysId = ModuleId.of("order-system");
+        ModuleId baseDepId = ModuleId.of("order-base-dep");
+        ModuleId child1Id = ModuleId.of("order-child-1");
+        ModuleId child2Id = ModuleId.of("order-child-2");
+        ModuleId consumerId = ModuleId.of("order-external-consumer");
+
+        List<String> closeOrder = Collections.synchronizedList(new ArrayList<>());
+
+        // Register in forward or mixed order
+        registry.registerModule(
+                ModuleDescriptor.builder(baseDepId, ModulePrimaryType.API, TARGET).build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onCloseAsync(IModuleContext context) {
+                        closeOrder.add("base-dep");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+        registry.registerModule(
+                ModuleDescriptor.builder(sysId, ModulePrimaryType.SYSTEM, TARGET)
+                        .addRequiredDependency(baseDepId)
+                        .build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onCloseAsync(IModuleContext context) {
+                        closeOrder.add("system");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+        registry.registerModule(
+                ModuleDescriptor.builder(child1Id, ModulePrimaryType.FEATURE, TARGET)
+                        .parentSystemId(sysId)
+                        .build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onCloseAsync(IModuleContext context) {
+                        closeOrder.add("child-1");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+        registry.registerModule(
+                ModuleDescriptor.builder(child2Id, ModulePrimaryType.FEATURE, TARGET)
+                        .parentSystemId(sysId)
+                        .addRequiredDependency(child1Id)
+                        .build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onCloseAsync(IModuleContext context) {
+                        closeOrder.add("child-2");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+        registry.registerModule(
+                ModuleDescriptor.builder(consumerId, ModulePrimaryType.APPLICATION, TARGET)
+                        .addRequiredDependency(child2Id)
+                        .build(),
+                () -> new IModuleLifecycleParticipant() {
+                    @Override
+                    public CompletionStage<Void> onCloseAsync(IModuleContext context) {
+                        closeOrder.add("consumer");
+                        return CompletableFuture.completedFuture(null);
+                    }
+                }
+        );
+
+        // Enable all modules
+        long cfg1 = registry.createSnapshot().configGeneration();
+        assertTrue(registry.enable(req(baseDepId, ModuleLifecycleOperation.ENABLE, cfg1, 0L)).succeeded());
+        long cfg2 = registry.createSnapshot().configGeneration();
+        assertTrue(registry.enable(req(sysId, ModuleLifecycleOperation.ENABLE, cfg2, 0L)).succeeded());
+        long cfg3 = registry.createSnapshot().configGeneration();
+        assertTrue(registry.enable(req(consumerId, ModuleLifecycleOperation.ENABLE, cfg3, 0L)).succeeded());
+
+        // Perform shutdown
+        registry.closeAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
+
+        // Verify order:
+        // 1. consumer (dependent) must close before child-2 (its dependency)
+        // 2. child-2 (dependent) must close before child-1 (its dependency)
+        // 3. child-1 and child-2 (children) must close before system (parent SYSTEM)
+        // 4. system must close before base-dep (its dependency)
+        int consumerIdx = closeOrder.indexOf("consumer");
+        int child2Idx = closeOrder.indexOf("child-2");
+        int child1Idx = closeOrder.indexOf("child-1");
+        int systemIdx = closeOrder.indexOf("system");
+        int baseDepIdx = closeOrder.indexOf("base-dep");
+
+        assertTrue(consumerIdx != -1 && child2Idx != -1 && consumerIdx < child2Idx,
+                "Consumer must close before child-2 (its dependency); was " + closeOrder);
+        assertTrue(child2Idx < child1Idx,
+                "Child-2 must close before child-1 (its dependency); was " + closeOrder);
+        assertTrue(child1Idx < systemIdx && child2Idx < systemIdx,
+                "Children must close before parent SYSTEM; was " + closeOrder);
+        assertTrue(systemIdx < baseDepIdx,
+                "System must close before base-dep (its dependency); was " + closeOrder);
+
+        // All modules must be UNLOADED
+        assertEquals(ModuleLifecycleState.UNLOADED, registry.findModule(consumerId).orElseThrow().state());
+        assertEquals(ModuleLifecycleState.UNLOADED, registry.findModule(child2Id).orElseThrow().state());
+        assertEquals(ModuleLifecycleState.UNLOADED, registry.findModule(child1Id).orElseThrow().state());
+        assertEquals(ModuleLifecycleState.UNLOADED, registry.findModule(sysId).orElseThrow().state());
+        assertEquals(ModuleLifecycleState.UNLOADED, registry.findModule(baseDepId).orElseThrow().state());
     }
 }
 

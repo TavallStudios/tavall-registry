@@ -264,7 +264,13 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
             CompletableFuture<ModuleLifecycleResult> future = new CompletableFuture<>();
             dispatchToHost(() -> {
                 try {
-                    future.complete(doLoad(request));
+                    doLoad(request).whenComplete((res, err) -> {
+                        if (err != null) {
+                            future.completeExceptionally(unwrap(err));
+                        } else {
+                            future.complete(res);
+                        }
+                    });
                 } catch (Throwable t) {
                     future.completeExceptionally(t);
                 }
@@ -416,13 +422,13 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
     // Internal Lifecycle Execution (Synchronized on hostBoundary.monitor())
     // --------------------------------------------------------------------------------------------
 
-    private ModuleLifecycleResult doLoad(ModuleLifecycleRequest request) {
+    private CompletionStage<ModuleLifecycleResult> doLoad(ModuleLifecycleRequest request) {
         assertHostBoundary();
         ModuleEntry entry = stateRegistry.get(request.moduleId());
         if (entry == null) {
             ModuleLifecycleResult fail = unknownModuleResult(request);
             idempotencyHandler.recordCompletion(request, fail);
-            return fail;
+            return CompletableFuture.completedFuture(fail);
         }
 
         // Fencing
@@ -430,14 +436,14 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
         if (fence != null) {
             ModuleLifecycleResult fail = failureResult(entry, request.operation(), fence);
             idempotencyHandler.recordCompletion(request, fail);
-            return fail;
+            return CompletableFuture.completedFuture(fail);
         }
 
         // Idempotency: already loaded or active
         if (entry.state() == ModuleLifecycleState.LOADED || entry.state() == ModuleLifecycleState.ENABLED) {
             ModuleLifecycleResult succ = successResult(entry, request.operation(), entry.state(), false);
             idempotencyHandler.recordCompletion(request, succ);
-            return succ;
+            return CompletableFuture.completedFuture(succ);
         }
 
         // Verify required dependencies are loaded
@@ -452,7 +458,7 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
             ModuleLifecycleResult fail = failureResult(entry, request.operation(),
                     ModuleFailure.of("missing_required_dependencies", "Required dependencies are not loaded: " + missing));
             idempotencyHandler.recordCompletion(request, fail);
-            return fail;
+            return CompletableFuture.completedFuture(fail);
         }
 
         // Increment lifecycle generation
@@ -472,11 +478,31 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
         entry.setActiveParticipant(participant);
 
         ModuleLifecycleState previousState = entry.state();
-        entry.transition(ModuleLifecycleState.LOADED);
 
-        ModuleLifecycleResult result = successResult(entry, request.operation(), previousState, true);
-        idempotencyHandler.recordCompletion(request, result);
-        return result;
+        CompletableFuture<ModuleLifecycleResult> resultFuture = new CompletableFuture<>();
+        CompletionStage<Void> loadStage = participant == null
+                ? CompletableFuture.completedFuture(null)
+                : participant.onLoadAsync(context);
+
+        loadStage.whenComplete((ignored, failure) -> hostBoundary.marshalToHost(() -> {
+            if (failure == null) {
+                entry.transition(ModuleLifecycleState.LOADED);
+                entry.setLastFailure(null);
+                ModuleLifecycleResult result = successResult(entry, request.operation(), previousState, true);
+                idempotencyHandler.recordCompletion(request, result);
+                resultFuture.complete(result);
+            } else {
+                Throwable cause = unwrap(failure);
+                closeContextSafely(entry);
+                entry.setLastFailure(ModuleFailure.from("module_load_failed", cause));
+                entry.transition(ModuleLifecycleState.FAILED);
+                ModuleLifecycleResult fail = failureResult(entry, request.operation(), entry.lastFailure());
+                idempotencyHandler.recordCompletion(request, fail);
+                resultFuture.complete(fail);
+            }
+        }, resultFuture));
+
+        return resultFuture;
     }
 
     private CompletionStage<ModuleLifecycleResult> doEnable(ModuleLifecycleRequest request) {
@@ -522,94 +548,100 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
             return CompletableFuture.completedFuture(fail);
         }
 
-        // Ensure loaded
-        if (!entry.state().isLoaded()) {
-            ModuleLifecycleResult loadRes = doLoad(request);
-            if (!loadRes.succeeded()) {
+        // Ensure loaded asynchronously if not yet loaded
+        CompletionStage<ModuleLifecycleResult> ensureLoadedStage = !entry.state().isLoaded()
+                ? doLoad(request)
+                : CompletableFuture.completedFuture(null);
+
+        return ensureLoadedStage.thenCompose(loadRes -> {
+            if (loadRes != null && !loadRes.succeeded()) {
                 return CompletableFuture.completedFuture(loadRes);
             }
-        }
 
-        // Atomic CAS desired state advance (only change desired state if not internal cascade and not already enabled)
-        boolean isCascade = request.isBootstrap() && "system-cascade".equals(request.actor());
-        boolean needsDesiredMutation = !isCascade && !request.isBootstrap() && (entry.desiredState() != ModuleDesiredState.ENABLED || entry.state() != ModuleLifecycleState.ENABLED);
+            // Atomic CAS desired state advance (only change desired state if not internal cascade and not already enabled)
+            boolean isCascade = request.isBootstrap() && "system-cascade".equals(request.actor());
+            boolean needsDesiredMutation = !isCascade && !request.isBootstrap() && (entry.desiredState() != ModuleDesiredState.ENABLED || entry.state() != ModuleLifecycleState.ENABLED);
 
-        long currentConfigGen = runtimeConfigGeneration.get();
-        long nextConfigGen = needsDesiredMutation ? currentConfigGen + 1L : currentConfigGen;
+            long currentConfigGen = runtimeConfigGeneration.get();
+            long nextConfigGen = needsDesiredMutation ? currentConfigGen + 1L : currentConfigGen;
 
-        CompletionStage<Boolean> casStage = needsDesiredMutation
-                ? snapshotProvider.casSnapshotAsync(runtimeTarget, currentConfigGen,
-                        createSnapshotWithUpdatedDesiredState(entry.descriptor().id(), ModuleDesiredState.ENABLED, nextConfigGen))
-                : CompletableFuture.completedFuture(true);
+            CompletionStage<Boolean> casStage = needsDesiredMutation
+                    ? snapshotProvider.casSnapshotAsync(runtimeTarget, currentConfigGen,
+                            createSnapshotWithUpdatedDesiredState(entry.descriptor().id(), ModuleDesiredState.ENABLED, nextConfigGen))
+                    : CompletableFuture.completedFuture(true);
 
-        return casStage.thenCompose(casSuccess -> {
-            if (!casSuccess) {
-                ModuleLifecycleResult fail = failureResult(entry, request.operation(),
-                        ModuleFailure.of("config_generation_conflict", "Concurrent snapshot modification detected"));
-                idempotencyHandler.recordCompletion(request, fail);
-                return CompletableFuture.completedFuture(fail);
-            }
-
-            // CAS succeeded: update in-memory desired state and publish config generation to ALL module views
-            CompletableFuture<ModuleLifecycleResult> resultFuture = new CompletableFuture<>();
-            hostBoundary.dispatchToHost(() -> {
-                if (needsDesiredMutation) {
-                    runtimeConfigGeneration.set(nextConfigGen);
-                    entry.setDesiredState(ModuleDesiredState.ENABLED);
-                    for (ModuleEntry e : stateRegistry.values()) {
-                        e.setConfigGeneration(nextConfigGen);
-                    }
+            return casStage.thenCompose(casSuccess -> {
+                if (!casSuccess) {
+                    ModuleLifecycleResult fail = failureResult(entry, request.operation(),
+                            ModuleFailure.of("config_generation_conflict", "Concurrent snapshot modification detected"));
+                    idempotencyHandler.recordCompletion(request, fail);
+                    return CompletableFuture.completedFuture(fail);
                 }
 
-                if (entry.state() == ModuleLifecycleState.ENABLED) {
-                    ModuleLifecycleResult res = successResult(entry, request.operation(), entry.state(), false);
-                    idempotencyHandler.recordCompletion(request, res);
-                    resultFuture.complete(res);
-                    return;
-                }
-
-                ModuleLifecycleState previousState = entry.state();
-                entry.transition(ModuleLifecycleState.ENABLING);
-                if (entry.context() != null) {
-                    entry.context().setQuiescing(false);
-                }
-
-                IModuleLifecycleParticipant participant = entry.activeParticipant();
-                CompletionStage<Void> startStage = participant == null
-                        ? CompletableFuture.completedFuture(null)
-                        : participant.onStartAsync(entry.context());
-
-                startStage.whenComplete((ignored, failure) -> hostBoundary.marshalToHost(() -> {
-                    if (failure == null) {
-                        entry.transition(ModuleLifecycleState.ENABLED);
-                        entry.setLastFailure(null);
-                        ModuleLifecycleResult res = successResult(entry, request.operation(), previousState, true);
-
-                        // A SYSTEM reports success only when every eligible child FEATURE enabled.
-                        if (entry.descriptor().primaryType() == ModulePrimaryType.SYSTEM) {
-                            cascadeCoordinator.cascadeEnableChildrenAsync(runtimeEpochId, entry.descriptor().id(), this::enableAsync)
-                                    .whenComplete((childResults, cascadeErr) -> {
-                                        ModuleLifecycleResult aggregate = aggregateCascade(entry, request.operation(), res,
-                                                childResults, cascadeErr, "child_cascade_enable_failed");
-                                        idempotencyHandler.recordCompletion(request, aggregate);
-                                        resultFuture.complete(aggregate);
-                                    });
-                        } else {
-                            idempotencyHandler.recordCompletion(request, res);
-                            resultFuture.complete(res);
+                // CAS succeeded: update in-memory desired state and publish config generation to ALL module views
+                CompletableFuture<ModuleLifecycleResult> resultFuture = new CompletableFuture<>();
+                hostBoundary.dispatchToHost(() -> {
+                    if (needsDesiredMutation) {
+                        runtimeConfigGeneration.set(nextConfigGen);
+                        entry.setDesiredState(ModuleDesiredState.ENABLED);
+                        for (ModuleEntry e : stateRegistry.values()) {
+                            e.setConfigGeneration(nextConfigGen);
                         }
-                    } else {
-                        Throwable cause = unwrap(failure);
-                        closeContextSafely(entry);
-                        entry.setLastFailure(ModuleFailure.from("module_start_failed", cause));
-                        entry.transition(ModuleLifecycleState.FAILED);
-                        ModuleLifecycleResult fail = failureResult(entry, request.operation(), entry.lastFailure());
-                        idempotencyHandler.recordCompletion(request, fail);
-                        resultFuture.complete(fail);
                     }
-                }, resultFuture));
+
+                    if (entry.state() == ModuleLifecycleState.ENABLED) {
+                        ModuleLifecycleResult res = successResult(entry, request.operation(), entry.state(), false);
+                        idempotencyHandler.recordCompletion(request, res);
+                        resultFuture.complete(res);
+                        return;
+                    }
+
+                    ModuleLifecycleState previousState = entry.state();
+                    entry.transition(ModuleLifecycleState.ENABLING);
+                    if (entry.context() != null) {
+                        entry.context().setQuiescing(false);
+                    }
+
+                    IModuleLifecycleParticipant participant = entry.activeParticipant();
+                    CompletionStage<Void> startStage = participant == null
+                            ? CompletableFuture.completedFuture(null)
+                            : participant.onStartAsync(entry.context());
+
+                    startStage.whenComplete((ignored, failure) -> hostBoundary.marshalToHost(() -> {
+                        if (failure == null) {
+                            entry.transition(ModuleLifecycleState.ENABLED);
+                            entry.setLastFailure(null);
+                            ModuleLifecycleResult res = successResult(entry, request.operation(), previousState, true);
+
+                            // A SYSTEM reports success only when every eligible child FEATURE enabled.
+                            if (entry.descriptor().primaryType() == ModulePrimaryType.SYSTEM) {
+                                cascadeCoordinator.cascadeEnableChildrenAsync(runtimeEpochId, entry.descriptor().id(), this::enableAsync)
+                                        .whenComplete((childResults, cascadeErr) -> hostBoundary.marshalToHost(() -> {
+                                            ModuleLifecycleResult aggregate = aggregateCascade(entry, request.operation(), res,
+                                                    childResults, cascadeErr, "child_cascade_enable_failed");
+                                            if (!aggregate.succeeded()) {
+                                                entry.setLastFailure(aggregate.failure());
+                                            }
+                                            idempotencyHandler.recordCompletion(request, aggregate);
+                                            resultFuture.complete(aggregate);
+                                        }, resultFuture));
+                            } else {
+                                idempotencyHandler.recordCompletion(request, res);
+                                resultFuture.complete(res);
+                            }
+                        } else {
+                            Throwable cause = unwrap(failure);
+                            closeContextSafely(entry);
+                            entry.setLastFailure(ModuleFailure.from("module_start_failed", cause));
+                            entry.transition(ModuleLifecycleState.FAILED);
+                            ModuleLifecycleResult fail = failureResult(entry, request.operation(), entry.lastFailure());
+                            idempotencyHandler.recordCompletion(request, fail);
+                            resultFuture.complete(fail);
+                        }
+                    }, resultFuture));
+                });
+                return resultFuture;
             });
-            return resultFuture;
         });
     }
 
@@ -1209,8 +1241,7 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
             return CompletableFuture.completedFuture(null);
         }
 
-        List<ModuleEntry> allModules = new ArrayList<>(stateRegistry.values());
-        Collections.reverse(allModules);
+        List<ModuleEntry> allModules = cascadeCoordinator.sortReverseTopologically(new ArrayList<>(stateRegistry.values()));
         CompletionStage<Void> closeStage = CompletableFuture.completedFuture(null);
 
         for (ModuleEntry entry : allModules) {
