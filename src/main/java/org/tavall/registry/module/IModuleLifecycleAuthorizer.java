@@ -1,6 +1,5 @@
 package org.tavall.registry.module;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -23,12 +22,4 @@ public interface IModuleLifecycleAuthorizer {
      */
     CompletionStage<Boolean> authorizeAsync(ModuleLifecycleRequest request);
 
-    /**
-     * Default authorizer allowing all requests.
-     *
-     * @return a permissive authorizer
-     */
-    static IModuleLifecycleAuthorizer permissive() {
-        return request -> CompletableFuture.completedFuture(true);
-    }
 }

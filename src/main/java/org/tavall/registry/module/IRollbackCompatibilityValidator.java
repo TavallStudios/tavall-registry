@@ -2,7 +2,6 @@ package org.tavall.registry.module;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -47,13 +46,4 @@ public interface IRollbackCompatibilityValidator {
             Map<ModuleId, ModuleDescriptor> registeredDescriptors
     );
 
-    /**
-     * Permissive validator for integration tests where artifact validation is mocked.
-     *
-     * @return permissive validator instance
-     */
-    static IRollbackCompatibilityValidator permissive() {
-        return (target, currentGen, candidate, descriptors) ->
-                CompletableFuture.completedFuture(ValidationResult.valid());
-    }
 }

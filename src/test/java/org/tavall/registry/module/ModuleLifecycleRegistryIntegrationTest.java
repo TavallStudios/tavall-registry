@@ -54,7 +54,7 @@ final class ModuleLifecycleRegistryIntegrationTest {
     }
 
     private ModuleLifecycleRegistry createTestRegistry(Executor executor) {
-        return createTestRegistry(TARGET, executor, snapshotProvider, IModuleLifecycleAuthorizer.permissive(), IRollbackCompatibilityValidator.permissive());
+        return createTestRegistry(TARGET, executor, snapshotProvider, LifecycleTestPolicies.allowAll(), LifecycleTestPolicies.acceptAllRollbacks());
     }
 
     private ModuleLifecycleRegistry createTestRegistry(
@@ -598,7 +598,7 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 HostLifecycleBoundary.direct(Thread.currentThread()),
                 request -> CompletableFuture.completedFuture("authorized-admin".equals(request.actor())),
                 snapshotProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         ModuleId depId = ModuleId.of("base-dependency");
@@ -680,9 +680,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 threadBoundary,
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 snapshotProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         ModuleId modId = ModuleId.of("thread-bound-module");
@@ -727,9 +727,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 boundary,
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 snapshotProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         ModuleId modId = ModuleId.of("async-worker-module");
@@ -777,8 +777,8 @@ final class ModuleLifecycleRegistryIntegrationTest {
             action.run();
         }, thread -> thread == owner);
         ModuleLifecycleRegistry controlled = new ModuleLifecycleRegistry(TARGET, hostDependencyMap,
-                boundary, IModuleLifecycleAuthorizer.permissive(), snapshotProvider,
-                IRollbackCompatibilityValidator.permissive());
+                boundary, LifecycleTestPolicies.allowAll(), snapshotProvider,
+                LifecycleTestPolicies.acceptAllRollbacks());
         ModuleId id = ModuleId.of("rejected-dispatch");
         controlled.registerModule(ModuleDescriptor.builder(id, ModulePrimaryType.SYSTEM, TARGET).build(), null);
         reject.set(true);
@@ -803,9 +803,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 boundary,
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 snapshotProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         ModuleId modId = ModuleId.of("deadlock-test-module");
@@ -995,7 +995,7 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 HostLifecycleBoundary.direct(Thread.currentThread()),
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 snapshotProvider,
                 strictValidator
         );
@@ -1062,9 +1062,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 boundary,
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 delayedProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         ModuleId modId = ModuleId.of("delayed-module");
@@ -1131,9 +1131,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 HostLifecycleBoundary.direct(Thread.currentThread()),
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 failedCasProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         // Readiness must fail exceptionally
@@ -1187,9 +1187,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 HostLifecycleBoundary.direct(Thread.currentThread()),
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 errorProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         assertTrue(errorRegistry.whenReady().toCompletableFuture().isCompletedExceptionally());
@@ -1239,9 +1239,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 TARGET,
                 hostDependencyMap,
                 HostLifecycleBoundary.direct(Thread.currentThread()),
-                IModuleLifecycleAuthorizer.permissive(),
+                LifecycleTestPolicies.allowAll(),
                 foreignProvider,
-                IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.acceptAllRollbacks()
         );
 
         assertTrue(wrongTargetRegistry.whenReady().toCompletableFuture().isCompletedExceptionally());
@@ -1302,7 +1302,7 @@ final class ModuleLifecycleRegistryIntegrationTest {
         ModuleLifecycleRegistry controller1 = new ModuleLifecycleRegistry(
                 UUID.randomUUID(), TARGET, hostDependencyMap,
                 HostLifecycleBoundary.direct(Thread.currentThread()),
-                IModuleLifecycleAuthorizer.permissive(), provider1, IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.allowAll(), provider1, LifecycleTestPolicies.acceptAllRollbacks()
         );
         controller1.registerModule(desc, null);
         controller1.enable(boot(controller1, "tester", modId, ModuleLifecycleOperation.ENABLE));
@@ -1323,7 +1323,7 @@ final class ModuleLifecycleRegistryIntegrationTest {
         ModuleLifecycleRegistry controller2 = new ModuleLifecycleRegistry(
                 UUID.randomUUID(), TARGET, hostDependencyMap,
                 HostLifecycleBoundary.direct(Thread.currentThread()),
-                IModuleLifecycleAuthorizer.permissive(), provider2, IRollbackCompatibilityValidator.permissive()
+                LifecycleTestPolicies.allowAll(), provider2, LifecycleTestPolicies.acceptAllRollbacks()
         );
         controller2.registerModule(desc, null);
 
