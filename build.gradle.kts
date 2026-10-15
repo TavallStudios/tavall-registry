@@ -65,7 +65,7 @@ repositories {
 
 dependencies {
     api("org.tavall:abstract-cache-system:1.0.0")
-    api("org.tavall:tavall-di:1.2.0")
+    api("org.tavall:tavall-di:1.2.1")
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
@@ -99,17 +99,17 @@ val verifyJarContents = tasks.register("verifyJarContents") {
 }
 
 val verifyDiArtifactDigest = tasks.register("verifyDiArtifactDigest") {
-    description = "Verifies the SHA-256 of a published DI 1.2.0 artifact; exact-source composite builds are pinned by source digest instead"
+    description = "Verifies the SHA-256 of a published DI 1.2.1 artifact; exact-source composite builds are pinned by source digest instead"
     doLast {
-        val expectedSha256 = "6ef820e5eae5db057143388bc3d5f33fad65a0ebfc20e9c40e82d1a66018e440"
+        val expectedSha256 = "3a3440a03e8aaa80f28394ca63e0b283b13ee19d1bbe4b081ae4ef299f22b83c"
         val publishedDiJar = configurations.compileClasspath.get().files.firstOrNull {
-            it.name == "tavall-di-1.2.0.jar" && it.invariantSeparatorsPath.contains("/modules-2/files-2.1/")
+            it.name == "tavall-di-1.2.1.jar" && it.invariantSeparatorsPath.contains("/modules-2/files-2.1/")
         }
         if (publishedDiJar != null) {
             val digest = MessageDigest.getInstance("SHA-256")
             val actualHash = digest.digest(publishedDiJar.readBytes()).joinToString("") { "%02x".format(it) }
             check(actualHash.equals(expectedSha256, ignoreCase = true)) {
-                "tavall-di:1.2.0 artifact SHA-256 digest mismatch! Expected $expectedSha256 but observed $actualHash"
+                "tavall-di:1.2.1 artifact SHA-256 digest mismatch! Expected $expectedSha256 but observed $actualHash"
             }
         }
     }
