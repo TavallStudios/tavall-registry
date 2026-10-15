@@ -6,7 +6,7 @@ package org.tavall.registry.module;
  * <b>Architectural Role:</b> Tracks the observed operational phase of each module generation
  * managed by {@link IModuleLifecycleRegistry}.
  * <p>
- * <b>Lifecycle & Concurrency:</b> Transitions between states are strictly serialized on the host
+ * <b>Lifecycle &amp; Concurrency:</b> Transitions between states are strictly serialized on the host
  * lifecycle boundary thread. Retained handles from previous generations cannot participate in
  * active operations once transition to an unbinding state occurs.
  */

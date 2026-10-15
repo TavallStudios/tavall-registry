@@ -10,7 +10,7 @@ import java.util.function.Supplier;
  * <b>Architectural Role:</b> Internal registry record encapsulating module descriptor, active participant,
  * observed lifecycle state, desired state, generation fences, health probe, and generation context.
  * <p>
- * <b>Lifecycle & Concurrency:</b> Access and mutation are serialized on the host lifecycle boundary thread
+ * <b>Lifecycle &amp; Concurrency:</b> Access and mutation are serialized on the host lifecycle boundary thread
  * owned by the registry.
  */
 public final class ModuleEntry {

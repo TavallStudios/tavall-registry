@@ -11,7 +11,7 @@ import java.util.List;
  * without creating a second or per-feature DI container. Tracks generation-owned resources and enforces
  * capability access policies (including residual obligations during quiesce/drain).
  * <p>
- * <b>Lifecycle & Concurrency:</b> Thread-safe. When the generation is unloaded or replaced, this context
+ * <b>Lifecycle &amp; Concurrency:</b> Thread-safe. When the generation is unloaded or replaced, this context
  * disposes all registered resources in LIFO order and removes its registered dependencies from the host DI map.
  */
 public interface IModuleContext extends AutoCloseable {

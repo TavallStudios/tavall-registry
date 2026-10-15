@@ -11,7 +11,7 @@ import java.util.concurrent.CompletionStage;
  * manager. Replaces ad-hoc bootstrap and teardown routines with a typed four-phase lifecycle:
  * start, quiesce, drain, close.
  * <p>
- * <b>Lifecycle & Concurrency:</b> Operations return {@link CompletionStage} instances. The lifecycle
+ * <b>Lifecycle &amp; Concurrency:</b> Operations return {@link CompletionStage} instances. The lifecycle
  * registry marshals stage completions back to the host lifecycle boundary thread before modifying
  * module state or unbinding DI resources.
  */
