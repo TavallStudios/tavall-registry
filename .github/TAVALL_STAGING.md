@@ -19,3 +19,4 @@ This branch is the combined integration tree for Tavall Registry APIs, indexed-r
 
 Unreleased branches use `0.<iteration>.<sub>-SNAPSHOT` through `tavallRegistryVersion`; release preparation on this branch sets the release version and RELEASE channel. This branch continues as the persistent integration root.
 - **Tavall Registry 1.3.0** — #18 (module catalog and deployment module-profile compatibility validation) through staging #17 to main. CI: #18 `42bd87de`, staging `3697327d`.
+- **Tavall Registry 1.3.1** — #20 (P0 lifecycle review fixes: participant onLoadAsync before LOADED, recorded SYSTEM cascade failures, reverse-dependency shutdown) through staging #19 to main. CI: #20 `e8fb5ef2`.
