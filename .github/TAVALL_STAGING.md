@@ -18,3 +18,4 @@ This branch is the combined integration tree for Tavall Registry APIs, indexed-r
 - **Tavall Registry 1.2.0** — #15 (typed module operator API and runtime transport SPI) through staging #16 to main `92eff633a26822cb6e9ac0d95661a200d544296e`. CI: #15 `2b82bbe6`, staging `2d2b8c8d`.
 
 Unreleased branches use `0.<iteration>.<sub>-SNAPSHOT` through `tavallRegistryVersion`; release preparation on this branch sets the release version and RELEASE channel. This branch continues as the persistent integration root.
+- **Tavall Registry 1.3.0** — #18 (module catalog and deployment module-profile compatibility validation) through staging #17 to main. CI: #18 `42bd87de`, staging `3697327d`.
