@@ -53,7 +53,7 @@ dependencies:
 
 artifacts:
   - name: tavall-registry
-    path: build/libs/tavall-registry-0.3.0-SNAPSHOT.jar
+    path: build/libs/tavall-registry-0.4.0-SNAPSHOT.jar
     channel: SNAPSHOT
 
 requiredChecks:
