@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "org.tavall"
-version = providers.gradleProperty("tavallVersion").orElse("1.0.0").get()
+version = providers.gradleProperty("tavallVersion").orElse("0.1.0-SNAPSHOT").get()
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(25)
@@ -100,12 +100,4 @@ publishing {
             }
         }
     }
-}
-
-tasks.register<Copy>("tavallCiArtifact") {
-    val binaryJar = tasks.named<Jar>("jar")
-    dependsOn(binaryJar)
-    from(binaryJar.flatMap { it.archiveFile })
-    into(layout.buildDirectory.dir("tavall-ci-artifacts"))
-    rename { "tavall-registry.jar" }
 }
