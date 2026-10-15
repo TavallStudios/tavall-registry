@@ -191,7 +191,7 @@ final class SystemCascadeCoordinator {
         return sorted;
     }
 
-    private List<ModuleEntry> sortReverseTopologically(List<ModuleEntry> modules) {
+    List<ModuleEntry> sortReverseTopologically(List<ModuleEntry> modules) {
         List<ModuleEntry> sorted = sortTopologically(modules);
         Collections.reverse(sorted);
         return sorted;
@@ -216,6 +216,14 @@ final class SystemCascadeCoordinator {
         }
 
         visiting.add(id);
+        // Parent system must start before its children (SYSTEM is a dependency of its child FEATUREs)
+        current.descriptor().parentSystemId().ifPresent(parentId -> {
+            ModuleEntry parentEntry = map.get(parentId);
+            if (parentEntry != null) {
+                topologicalSortVisit(parentEntry, map, visited, visiting, result);
+            }
+        });
+        // Required dependencies must start before dependents
         for (ModuleId depId : current.descriptor().requiredDependencies()) {
             ModuleEntry depEntry = map.get(depId);
             if (depEntry != null) {

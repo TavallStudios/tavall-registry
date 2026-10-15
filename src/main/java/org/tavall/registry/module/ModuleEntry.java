@@ -162,12 +162,21 @@ public final class ModuleEntry {
      * @return current health report
      */
     public synchronized ModuleHealth assessHealth() {
+        if (state == ModuleLifecycleState.FAILED) {
+            String summary = lastFailure != null
+                    ? "Module in FAILED state: " + lastFailure.message()
+                    : "Module in FAILED state";
+            return ModuleHealth.unhealthy(summary, java.util.Map.of());
+        }
         if (healthCheck != null) {
             try {
                 return healthCheck.checkHealth();
             } catch (Throwable t) {
                 return ModuleHealth.unhealthy("Health probe failed: " + t.getMessage(), java.util.Map.of());
             }
+        }
+        if (lastFailure != null) {
+            return ModuleHealth.degraded("Module failure recorded: " + lastFailure.message(), java.util.Map.of());
         }
         return state.isActive()
                 ? ModuleHealth.healthy("Module operational")
