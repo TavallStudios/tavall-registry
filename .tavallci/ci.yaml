@@ -1,0 +1,74 @@
+version: 2
+
+source:
+  repository: TavallStudios/tavall-registry
+  provider: github
+
+build:
+  type: gradle
+  java: 25
+  gradle: 9.6.1
+
+resources:
+  mode: SYSTEM
+
+dependencies:
+  - kind: source
+    identity: TavallStudios/tavall-cache
+    role: SHARED_DEP
+    selector: required-source
+    digest: e6e78fdaf8cef80a488c7a661b8c51384e8780fe
+    substitutions: 'org.tavall:abstract-cache-system=:abstract-cache-system'
+    sourceVersion: 1.0.0
+    versionProperty: tavallVersion
+  - kind: source
+    identity: TavallStudios/tavall-di
+    role: SHARED_DEP
+    selector: required-source
+    digest: fb985397d75bcc6c4490b972746ce10b6b405c68
+    substitutions: 'org.tavall:tavall-di=:'
+    sourceVersion: 1.2.0
+    versionProperty: tavallDiVersion
+  - kind: source
+    identity: TavallStudios/tavall-logging
+    role: SHARED_DEP
+    selector: required-source
+    digest: e047172ab7c2be005baf0b2c4b46e230ead78417
+    substitutions: 'org.tavall:tavall-logging=:'
+    sourceVersion: 1.0.0
+    versionProperty: tavallVersion
+  - kind: source
+    identity: TavallStudios/tavall-custom-enum-java
+    role: SHARED_DEP
+    selector: required-source
+    digest: 2284168910f755a0d13a68fbc821cedc14d0a49b
+    substitutions: 'org.tavall:tavall-custom-enum-java=:'
+    sourceVersion: 1.0.0
+    versionProperty: tavallVersion
+  - kind: artifact
+    identity: tavall-public-maven-mirror
+    role: MAVEN_MIRROR
+    selector: sha256
+    digest: c945956c42d0e49f28ec925d62956d94668c0b3fab0293d9dd2db028b26d9cd2
+
+artifacts:
+  - name: tavall-registry
+    path: build/tavall-ci-artifacts/tavall-registry.jar
+
+requiredChecks:
+  - quality
+
+checks:
+  quality:
+    executor: gradle
+    tasks:
+      - "clean"
+      - "check"
+      - "assemble"
+      - tavallCiArtifact
+
+  artifact:
+    executor: gradle
+    tasks:
+      - tavallCiArtifact
+    includeInAll: false
