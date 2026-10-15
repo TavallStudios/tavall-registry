@@ -58,6 +58,7 @@ artifacts:
 
 requiredChecks:
   - quality
+  - artifact
 
 checks:
   quality:
@@ -71,4 +72,3 @@ checks:
     executor: gradle
     tasks:
       - jar
-    includeInAll: false
