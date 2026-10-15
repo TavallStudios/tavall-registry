@@ -25,9 +25,9 @@ dependencies:
     identity: TavallStudios/tavall-di
     role: SHARED_DEP
     selector: required-source
-    digest: fb985397d75bcc6c4490b972746ce10b6b405c68
+    digest: c6ecaee3027e5e42f6a0fb11a40700925968498f
     substitutions: 'org.tavall:tavall-di=:'
-    sourceVersion: 1.2.0
+    sourceVersion: 1.2.1
     versionProperty: tavallDiVersion
   - kind: source
     identity: TavallStudios/tavall-logging
@@ -53,10 +53,12 @@ dependencies:
 
 artifacts:
   - name: tavall-registry
-    path: build/tavall-ci-artifacts/tavall-registry.jar
+    path: build/libs/tavall-registry-0.1.0-SNAPSHOT.jar
+    channel: SNAPSHOT
 
 requiredChecks:
   - quality
+  - artifact
 
 checks:
   quality:
@@ -65,10 +67,8 @@ checks:
       - "clean"
       - "check"
       - "assemble"
-      - tavallCiArtifact
 
   artifact:
     executor: gradle
     tasks:
-      - tavallCiArtifact
-    includeInAll: false
+      - jar
