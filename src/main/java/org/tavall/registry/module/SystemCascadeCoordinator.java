@@ -123,6 +123,58 @@ final class SystemCascadeCoordinator {
         return chain.thenApply(ignored -> results);
     }
 
+    /**
+     * Re-applies restored desired state to every root module (a SYSTEM or a module without a parent)
+     * in dependency order. Roots whose desired state is ENABLED are enabled and their SYSTEM cascade
+     * restores eligible children; an already-active SYSTEM only re-runs its child cascade. Desired
+     * state is never mutated, so independently disabled FEATURES and disabled SYSTEMS stay inactive.
+     *
+     * @param runtimeEpochId current runtime epoch
+     * @param enableInvoker  function invoking enableAsync for a root request
+     * @return completion stage yielding the root and child enable results
+     */
+    CompletionStage<List<ModuleLifecycleResult>> reconcileDesiredRootsAsync(
+            UUID runtimeEpochId,
+            Function<ModuleLifecycleRequest, CompletionStage<ModuleLifecycleResult>> enableInvoker
+    ) {
+        hostBoundary.assertHostBoundary("reconcileDesiredRoots");
+        List<ModuleEntry> roots = new ArrayList<>();
+        for (ModuleEntry entry : stateRegistry.values()) {
+            if (entry.descriptor().parentSystemId().isEmpty()) {
+                roots.add(entry);
+            }
+        }
+        List<ModuleEntry> order = sortTopologically(roots);
+
+        List<ModuleLifecycleResult> results = Collections.synchronizedList(new ArrayList<>());
+        CompletionStage<Void> chain = CompletableFuture.completedFuture(null);
+        for (ModuleEntry root : order) {
+            chain = chain.thenCompose(ignored -> {
+                if (root.desiredState() != ModuleDesiredState.ENABLED) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                if (root.state().isActive()) {
+                    if (root.descriptor().primaryType() != ModulePrimaryType.SYSTEM) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    return cascadeEnableChildrenAsync(runtimeEpochId, root.descriptor().id(), enableInvoker)
+                            .thenAccept(results::addAll);
+                }
+                ModuleLifecycleRequest rootReq = ModuleLifecycleRequest.internalCascade(
+                        bootstrapToken,
+                        runtimeEpochId,
+                        "desired-state-reconcile",
+                        root.descriptor().id(),
+                        ModuleLifecycleOperation.ENABLE,
+                        root.configGeneration(),
+                        root.lifecycleGeneration()
+                );
+                return enableInvoker.apply(rootReq).thenAccept(results::add);
+            });
+        }
+        return chain.thenApply(ignored -> List.copyOf(results));
+    }
+
     private List<ModuleEntry> sortTopologically(List<ModuleEntry> modules) {
         Map<ModuleId, ModuleEntry> map = new HashMap<>();
         for (ModuleEntry m : modules) {

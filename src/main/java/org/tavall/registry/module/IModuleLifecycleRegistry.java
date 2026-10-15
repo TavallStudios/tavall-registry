@@ -250,6 +250,18 @@ public interface IModuleLifecycleRegistry extends AutoCloseable {
     ModuleHealth checkAggregateHealth(Optional<ModuleId> parentSystemId);
 
     /**
+     * Re-applies the authoritative desired state after a runtime (re)start.
+     * <p>
+     * Every root module (SYSTEM or parentless module) whose restored desired state is
+     * {@link ModuleDesiredState#ENABLED} is enabled in dependency order, and each SYSTEM cascade restores
+     * only children whose desired state is ENABLED. Desired state and the configuration generation are not
+     * mutated; disabled modules stay inactive and failures are reported in the returned results.
+     *
+     * @return completion stage yielding every root and child enable result produced by the reconciliation
+     */
+    CompletionStage<List<ModuleLifecycleResult>> reconcileDesiredStatesAsync();
+
+    /**
      * Restores module desired states and executes transitions from a supplied configuration snapshot.
      *
      * @param snapshot the desired state snapshot to restore; must not be null

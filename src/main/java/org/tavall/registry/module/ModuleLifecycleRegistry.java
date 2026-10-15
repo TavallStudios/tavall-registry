@@ -1143,6 +1143,21 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
     }
 
     @Override
+    public CompletionStage<List<ModuleLifecycleResult>> reconcileDesiredStatesAsync() {
+        requireReady();
+        CompletableFuture<List<ModuleLifecycleResult>> future = new CompletableFuture<>();
+        dispatchToHost(() -> cascadeCoordinator.reconcileDesiredRootsAsync(runtimeEpochId, this::enableAsync)
+                .whenComplete((results, err) -> {
+                    if (err != null) {
+                        future.completeExceptionally(unwrap(err));
+                    } else {
+                        future.complete(results);
+                    }
+                }), future);
+        return future;
+    }
+
+    @Override
     public CompletionStage<Void> restoreFromSnapshotAsync(ModuleDesiredStateSnapshot snapshot) {
         requireReady();
         Objects.requireNonNull(snapshot, "snapshot must not be null");

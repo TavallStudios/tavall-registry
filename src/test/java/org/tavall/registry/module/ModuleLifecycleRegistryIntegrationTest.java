@@ -1544,5 +1544,48 @@ final class ModuleLifecycleRegistryIntegrationTest {
                 "tester", moduleId, ModuleLifecycleOperation.ENABLE, 1L, 0L, "retry-after-host-failure"));
         assertTrue(retried.succeeded(), "the failed attempt must not leave conflict_in_flight behind: " + retried.failure());
     }
+
+    @Test
+    @DisplayName("Restart reconciliation restores enabled SYSTEM children and keeps independently disabled FEATURES off")
+    void restartReconciliationAppliesDurableDesiredState() throws Exception {
+        ModuleId sysId = ModuleId.of("autopost-system");
+        ModuleId discoveryId = ModuleId.of("autopost-discovery");
+        ModuleId engagementId = ModuleId.of("autopost-engagement");
+        ModuleId standaloneId = ModuleId.of("standalone-disabled");
+        List<ModuleDescriptor> descriptors = List.of(
+                ModuleDescriptor.builder(sysId, ModulePrimaryType.SYSTEM, TARGET).build(),
+                ModuleDescriptor.builder(discoveryId, ModulePrimaryType.FEATURE, TARGET).parentSystemId(sysId).build(),
+                ModuleDescriptor.builder(engagementId, ModulePrimaryType.FEATURE, TARGET).parentSystemId(sysId).build(),
+                ModuleDescriptor.builder(standaloneId, ModulePrimaryType.SYSTEM, TARGET).build());
+        descriptors.forEach(d -> registry.registerModule(d, null));
+
+        List<ModuleLifecycleResult> firstBoot = registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertTrue(firstBoot.stream().allMatch(ModuleLifecycleResult::succeeded));
+        assertEquals(ModuleLifecycleState.ENABLED, registry.findModule(engagementId).orElseThrow().state());
+        assertEquals(1L, registry.createSnapshot().configGeneration(), "reconciliation must not mutate desired state");
+
+        ModuleSnapshot engagement = registry.findModule(engagementId).orElseThrow();
+        assertTrue(registry.disable(req(engagementId, ModuleLifecycleOperation.DISABLE,
+                engagement.configGeneration(), engagement.lifecycleGeneration())).succeeded());
+        ModuleSnapshot standalone = registry.findModule(standaloneId).orElseThrow();
+        assertTrue(registry.disable(req(standaloneId, ModuleLifecycleOperation.DISABLE,
+                standalone.configGeneration(), standalone.lifecycleGeneration())).succeeded());
+        registry.close();
+
+        registry = createTestRegistry(Runnable::run);
+        descriptors.forEach(d -> registry.registerModule(d, null));
+        List<ModuleLifecycleResult> restart = registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
+
+        assertTrue(restart.stream().allMatch(ModuleLifecycleResult::succeeded));
+        assertEquals(ModuleLifecycleState.ENABLED, registry.findModule(sysId).orElseThrow().state());
+        assertEquals(ModuleLifecycleState.ENABLED, registry.findModule(discoveryId).orElseThrow().state());
+        assertFalse(registry.findModule(engagementId).orElseThrow().isActive());
+        assertEquals(ModuleDesiredState.DISABLED, registry.findModule(engagementId).orElseThrow().desiredState());
+        assertFalse(registry.findModule(standaloneId).orElseThrow().isActive());
+
+        // A second reconciliation is a no-op for active roots and keeps the disabled FEATURE off.
+        registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertFalse(registry.findModule(engagementId).orElseThrow().isActive());
+    }
 }
 
