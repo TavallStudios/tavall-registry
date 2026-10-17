@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "org.tavall"
-version = providers.gradleProperty("tavallRegistryVersion").orElse("0.5.0-SNAPSHOT").get()
+version = providers.gradleProperty("tavallRegistryVersion").orElse("1.3.2").get()
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(25)
