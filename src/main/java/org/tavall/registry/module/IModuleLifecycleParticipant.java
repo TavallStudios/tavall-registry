@@ -78,6 +78,10 @@ public interface IModuleLifecycleParticipant {
      * <p>
      * Crucial for systems like Tavall Pay where disabling new transaction initiation must not
      * discard pending settlement, refunds, dispute handling, or webhook reconciliation.
+     * <p>
+     * The policy is a static property of the participant type: desired-state reconciliation reads it from
+     * an instance that has not been loaded to decide whether a disabled module must be restored to
+     * DISABLED after a restart, so it must not depend on {@link #onLoadAsync(IModuleContext)}.
      *
      * @return the residual obligation policy; never null
      */

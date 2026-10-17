@@ -1589,6 +1589,80 @@ final class ModuleLifecycleRegistryIntegrationTest {
         assertFalse(registry.findModule(engagementId).orElseThrow().isActive());
     }
 
+    @Test
+    @DisplayName("Restart restores a disabled provider with residual obligations to DISABLED and leaves other disabled FEATURES unloaded")
+    void restartRestoresResidualObligationsOfDisabledProvider() throws Exception {
+        ModuleId paySysId = ModuleId.of("tavall-pay-system");
+        ModuleId stripeId = ModuleId.of("tavall-pay-stripe");
+        ModuleId reportsId = ModuleId.of("tavall-pay-reports");
+        CapabilityId initiateCap = CapabilityId.of("pay:stripe:initiate");
+        CapabilityId webhookCap = CapabilityId.of("pay:stripe:reconcile-notification");
+        CapabilityId settleCap = CapabilityId.of("pay:stripe:settle");
+        CapabilityId reportsCap = CapabilityId.of("pay:reports");
+        List<ModuleDescriptor> descriptors = List.of(
+                ModuleDescriptor.builder(paySysId, ModulePrimaryType.SYSTEM, TARGET).build(),
+                ModuleDescriptor.builder(stripeId, ModulePrimaryType.FEATURE, TARGET).parentSystemId(paySysId)
+                        .addProvidedCapability(initiateCap).addProvidedCapability(webhookCap).addProvidedCapability(settleCap).build(),
+                ModuleDescriptor.builder(reportsId, ModulePrimaryType.FEATURE, TARGET).parentSystemId(paySysId)
+                        .addProvidedCapability(reportsCap).build());
+        AtomicInteger reportsLoads = new AtomicInteger();
+        Runnable registerAll = () -> {
+            registry.registerModule(descriptors.get(0), null);
+            registry.registerModule(descriptors.get(1), () -> new IModuleLifecycleParticipant() {
+                @Override
+                public ResidualObligationPolicy residualObligationPolicy() {
+                    return ResidualObligationPolicy.of(webhookCap, settleCap);
+                }
+            });
+            registry.registerModule(descriptors.get(2), () -> new IModuleLifecycleParticipant() {
+                @Override
+                public CompletionStage<Void> onLoadAsync(IModuleContext context) {
+                    reportsLoads.incrementAndGet();
+                    return CompletableFuture.completedFuture(null);
+                }
+            });
+        };
+
+        registerAll.run();
+        assertTrue(registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS)
+                .stream().allMatch(ModuleLifecycleResult::succeeded));
+        for (ModuleId id : List.of(stripeId, reportsId)) {
+            ModuleSnapshot module = registry.findModule(id).orElseThrow();
+            assertTrue(registry.disable(req(id, ModuleLifecycleOperation.DISABLE,
+                    module.configGeneration(), module.lifecycleGeneration())).succeeded());
+        }
+        assertTrue(registry.isCapabilityAvailable(webhookCap), "residual obligations hold while disabled");
+        long configGeneration = registry.createSnapshot().configGeneration();
+        registry.close();
+
+        registry = createTestRegistry(Runnable::run);
+        reportsLoads.set(0);
+        registerAll.run();
+        List<ModuleLifecycleResult> restart = registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
+
+        assertTrue(restart.stream().allMatch(ModuleLifecycleResult::succeeded), "restart results: " + restart);
+        ModuleSnapshot stripe = registry.findModule(stripeId).orElseThrow();
+        assertEquals(ModuleLifecycleState.DISABLED, stripe.state());
+        assertEquals(ModuleDesiredState.DISABLED, stripe.desiredState());
+        assertFalse(registry.isCapabilityAvailable(initiateCap), "new initiation stays refused after restart");
+        assertTrue(registry.isCapabilityAvailable(webhookCap), "webhook reconciliation survives the restart");
+        assertTrue(registry.isCapabilityAvailable(settleCap), "settlement survives the restart");
+        assertEquals(ModuleLifecycleState.DISCOVERED, registry.findModule(reportsId).orElseThrow().state(),
+                "a disabled FEATURE without residual obligations is not loaded");
+        assertEquals(0, reportsLoads.get());
+        assertFalse(registry.isCapabilityAvailable(reportsCap));
+        assertEquals(configGeneration, registry.createSnapshot().configGeneration(), "restoring residual obligations must not mutate desired state");
+
+        // A second reconciliation leaves the restored provider alone, and an operator can still enable it.
+        List<ModuleLifecycleResult> again = registry.reconcileDesiredStatesAsync().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertTrue(again.stream().noneMatch(r -> r.moduleId().equals(stripeId)), "no second restore: " + again);
+        assertEquals(ModuleLifecycleState.DISABLED, registry.findModule(stripeId).orElseThrow().state());
+        stripe = registry.findModule(stripeId).orElseThrow();
+        assertTrue(registry.enable(req(stripeId, ModuleLifecycleOperation.ENABLE,
+                stripe.configGeneration(), stripe.lifecycleGeneration())).succeeded());
+        assertTrue(registry.isCapabilityAvailable(initiateCap));
+    }
+
     // --------------------------------------------------------------------------------------------
     // Lifecycle Review Regressions (2026-10-15)
     // --------------------------------------------------------------------------------------------

@@ -256,8 +256,12 @@ public interface IModuleLifecycleRegistry extends AutoCloseable {
      * {@link ModuleDesiredState#ENABLED} is enabled in dependency order, and each SYSTEM cascade restores
      * only children whose desired state is ENABLED. Desired state and the configuration generation are not
      * mutated; disabled modules stay inactive and failures are reported in the returned results.
+     * <p>
+     * A module still not loaded after that pass whose participant declares residual capabilities is then
+     * loaded and disabled, so residual obligations (settlement, refunds, verified webhooks) survive a
+     * restart of a disabled provider exactly as they survived its disable.
      *
-     * @return completion stage yielding every root and child enable result produced by the reconciliation
+     * @return completion stage yielding every enable, load and disable result produced by the reconciliation
      */
     CompletionStage<List<ModuleLifecycleResult>> reconcileDesiredStatesAsync();
 

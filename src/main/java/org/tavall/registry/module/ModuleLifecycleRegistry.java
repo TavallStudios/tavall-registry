@@ -1179,11 +1179,27 @@ public class ModuleLifecycleRegistry implements IModuleLifecycleRegistry {
         requireReady();
         CompletableFuture<List<ModuleLifecycleResult>> future = new CompletableFuture<>();
         dispatchToHost(() -> cascadeCoordinator.reconcileDesiredRootsAsync(runtimeEpochId, this::enableAsync)
+                .thenCompose(this::restoreResidualObligationsOnHost)
                 .whenComplete((results, err) -> {
                     if (err != null) {
                         future.completeExceptionally(unwrap(err));
                     } else {
                         future.complete(results);
+                    }
+                }), future);
+        return future;
+    }
+
+    private CompletionStage<List<ModuleLifecycleResult>> restoreResidualObligationsOnHost(List<ModuleLifecycleResult> reconciled) {
+        CompletableFuture<List<ModuleLifecycleResult>> future = new CompletableFuture<>();
+        dispatchToHost(() -> cascadeCoordinator.restoreResidualObligationsAsync(runtimeEpochId, this::loadAsync, this::disableAsync)
+                .whenComplete((restored, err) -> {
+                    if (err != null) {
+                        future.completeExceptionally(unwrap(err));
+                    } else {
+                        List<ModuleLifecycleResult> all = new ArrayList<>(reconciled);
+                        all.addAll(restored);
+                        future.complete(List.copyOf(all));
                     }
                 }), future);
         return future;
