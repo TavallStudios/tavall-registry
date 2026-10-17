@@ -117,6 +117,7 @@ public class StripeParticipant implements IModuleLifecycleParticipant {
 - When the module is `ENABLED`: All capabilities (including `pay:new-initiation`) are available.
 - When the module is `DISABLED`: `registry.isCapabilityAvailable(newInitiation)` returns `false`. However, `registry.isCapabilityAvailable(...)` returns `true` for residual capabilities declared in `residualObligationPolicy`.
 - Even forced disable requests (`force=true`) cannot bypass residual payment obligations.
+- Residual obligations survive a restart (1.3.2). After the desired-state pass, `reconcileDesiredStatesAsync` loads and disables, with bootstrap requests, every module left `DISCOVERED` whose participant declares residual capabilities. A provider that was disabled before the restart (or cascade-disabled with its SYSTEM) therefore comes back `DISABLED` with the same residual capabilities. Disabled modules without residual capabilities stay unloaded, and desired state and the configuration generation are not changed. `residualObligationPolicy()` must therefore be a static property of the participant type: the restore pass reads it from an instance that has not been loaded.
 
 ---
 
