@@ -23,9 +23,12 @@ import java.util.function.Function;
  *   <li>Preserves child declarative desired states during parent disable cascades.</li>
  *   <li>Re-enables only children whose desired state is {@link ModuleDesiredState#ENABLED}.</li>
  *   <li>Reports honest partial failures if any child fails to quiesce, drain, or start.</li>
+ *   <li>Restores modules with residual obligations to DISABLED after a restart.</li>
  * </ul>
  */
 final class SystemCascadeCoordinator {
+
+    private static final String RESIDUAL_RESTORE_ACTOR = "residual-obligation-restore";
 
     private final ModuleStateRegistry stateRegistry;
     private final HostLifecycleBoundary hostBoundary;
@@ -173,6 +176,76 @@ final class SystemCascadeCoordinator {
             });
         }
         return chain.thenApply(ignored -> List.copyOf(results));
+    }
+
+    /**
+     * Restores residual obligations after a restart. A module that reconciliation left DISCOVERED is
+     * loaded and then disabled when its participant declares residual capabilities, so a provider that
+     * was disabled before the restart keeps servicing settlement, refunds and webhooks exactly as it
+     * did before. Modules without residual capabilities stay unloaded, and desired state is never
+     * mutated: the restored module reports DISABLED, not ENABLED.
+     *
+     * @param runtimeEpochId current runtime epoch
+     * @param loadInvoker    function invoking loadAsync for a restore request
+     * @param disableInvoker function invoking disableAsync for a restore request
+     * @return completion stage yielding the load and disable results of every restored module
+     */
+    CompletionStage<List<ModuleLifecycleResult>> restoreResidualObligationsAsync(
+            UUID runtimeEpochId,
+            Function<ModuleLifecycleRequest, CompletionStage<ModuleLifecycleResult>> loadInvoker,
+            Function<ModuleLifecycleRequest, CompletionStage<ModuleLifecycleResult>> disableInvoker
+    ) {
+        hostBoundary.assertHostBoundary("restoreResidualObligations");
+        List<ModuleEntry> order = sortTopologically(new ArrayList<>(stateRegistry.values()));
+
+        List<ModuleLifecycleResult> results = Collections.synchronizedList(new ArrayList<>());
+        CompletionStage<Void> chain = CompletableFuture.completedFuture(null);
+        for (ModuleEntry entry : order) {
+            chain = chain.thenCompose(ignored -> {
+                if (!declaresUnservedResidualObligations(entry)) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                ModuleLifecycleRequest loadReq = ModuleLifecycleRequest.internalCascade(
+                        bootstrapToken,
+                        runtimeEpochId,
+                        RESIDUAL_RESTORE_ACTOR,
+                        entry.descriptor().id(),
+                        ModuleLifecycleOperation.LOAD,
+                        entry.configGeneration(),
+                        entry.lifecycleGeneration()
+                );
+                return loadInvoker.apply(loadReq).thenCompose(loaded -> {
+                    results.add(loaded);
+                    if (!loaded.succeeded()) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    ModuleLifecycleRequest disableReq = ModuleLifecycleRequest.internalCascade(
+                            bootstrapToken,
+                            runtimeEpochId,
+                            RESIDUAL_RESTORE_ACTOR,
+                            entry.descriptor().id(),
+                            ModuleLifecycleOperation.DISABLE,
+                            entry.configGeneration(),
+                            entry.lifecycleGeneration()
+                    );
+                    return disableInvoker.apply(disableReq).thenAccept(results::add);
+                });
+            });
+        }
+        return chain.thenApply(ignored -> List.copyOf(results));
+    }
+
+    /**
+     * Reads the residual obligation policy from an unloaded participant instance. The policy is a static
+     * property of the participant type (see {@link IModuleLifecycleParticipant#residualObligationPolicy()}),
+     * so the instance is discarded without entering the lifecycle.
+     */
+    private boolean declaresUnservedResidualObligations(ModuleEntry entry) {
+        if (entry.state() != ModuleLifecycleState.DISCOVERED) {
+            return false;
+        }
+        IModuleLifecycleParticipant probe = entry.createParticipantInstance();
+        return probe != null && !probe.residualObligationPolicy().residualCapabilities().isEmpty();
     }
 
     private List<ModuleEntry> sortTopologically(List<ModuleEntry> modules) {
