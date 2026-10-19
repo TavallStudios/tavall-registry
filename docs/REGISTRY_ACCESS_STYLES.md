@@ -219,14 +219,14 @@ Registry subclasses may use `put`, `remove`, `compute`, and `clear` to implement
 
 | Surface | Sync State | Location | Last Updated | Evidence |
 | --- | --- | --- | --- | --- |
-| GitHub | `WORKING` | [TavallStudios/tavall-registry/docs/REGISTRY_ACCESS_STYLES.md](https://github.com/TavallStudios/tavall-registry/blob/working/registry-access-guide-20260929/docs/REGISTRY_ACCESS_STYLES.md) | 2026-10-19 11:24 AM PDT | [PR #12](https://github.com/TavallStudios/tavall-registry/pull/12) remains the proposed source. |
-| Notion | `NOT_APPLICABLE` | No Notion twin designated | 2026-10-19 11:24 AM PDT | Reference docs are shared only by request or explicit policy. |
+| GitHub | `PRIMARY` | [TavallStudios/tavall-registry/docs/REGISTRY_ACCESS_STYLES.md](https://github.com/TavallStudios/tavall-registry/blob/main/docs/REGISTRY_ACCESS_STYLES.md) | 2026-10-19 11:26 AM PDT | PR #12 merged while Draft at [`8d35df86`](https://github.com/TavallStudios/tavall-registry/commit/8d35df86d16f4395c014f7a14624f8939c27182b). |
+| Notion | `NOT_APPLICABLE` | No Notion twin designated | 2026-10-19 11:26 AM PDT | Reference docs are shared only by request or explicit policy. |
 
 ### Update History
 
 | Timestamp | Surface | Event | Location | Previous Location | Evidence | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-09-29 1:23 PM PDT | GitHub | `CREATED` | `docs/REGISTRY_ACCESS_STYLES.md` | — | [Registry PR #12](https://github.com/TavallStudios/tavall-registry/pull/12) | Added the consumer-access guide in the existing PR. |
-| 2026-10-19 11:24 AM PDT | GitHub | `UPDATED` | `docs/REGISTRY_ACCESS_STYLES.md` | Same path | [Registry PR #12](https://github.com/TavallStudios/tavall-registry/pull/12) | Verified the current main API, clarified optional secondary indexes and synchronized thread ownership, and added documentation-state metadata. |
+| 2026-10-19 11:26 AM PDT | GitHub | `MERGED` | `docs/REGISTRY_ACCESS_STYLES.md` | `docs/REGISTRY_ACCESS_STYLES.md` | [PR #12 merge commit](https://github.com/TavallStudios/tavall-registry/commit/8d35df86d16f4395c014f7a14624f8939c27182b) | The verified guide, README index, local CI definition, and test-discovery isolation are on main. |
 
 </details>

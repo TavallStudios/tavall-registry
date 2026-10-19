@@ -48,9 +48,9 @@ Module Type: `LIBRARY`; Runtime Owner: `None`.
 
 - **Module Type:** `LIBRARY`
 - **Runtime Owner:** `None`
-- **Current PR Stack:** Platform staging root [#23](https://github.com/TavallStudios/tavall-registry/pull/23) remains active after 1.3.2. README PR [#11](https://github.com/TavallStudios/tavall-registry/pull/11) and atomic indexed Registry PR [#4](https://github.com/TavallStudios/tavall-registry/pull/4) are merged. Registry Access Styles is a standalone main-based reference, not a staging child.
+- **Current PR Stack:** Registry consumer guide [#12](https://github.com/TavallStudios/tavall-registry/pull/12) merged on 2026-10-19; atomic indexed Registry PR [#4](https://github.com/TavallStudios/tavall-registry/pull/4) merged on 2026-08-05. Platform staging root [#23](https://github.com/TavallStudios/tavall-registry/pull/23) remains open and independent.
 - **Progression / Design State:** Module Progression and DESIGN records are pending under the central TavallStudios documentation rollout.
-- **Local CI Definition:** This PR adds root `.tavallci/ci.yaml` with an exact-source Java 25 quality profile for `clean check assemble`; it pins Tavall DI, Cache, Logging, and Custom Enum producer commits. GitHub Actions remain disabled.
+- **Local CI Definition:** Root `.tavallci/ci.yaml` defines the exact-source Java 25 quality profile (`clean check assemble`) with DI, Cache, Logging, and Custom Enum source pins. GitHub Actions are disabled.
 
 ## Requirements / Compatibility
 
@@ -79,13 +79,14 @@ No tracked license file is present in the current repository tree.
 
 | Surface | Sync State | Location | Last Updated | Evidence |
 | --- | --- | --- | --- | --- |
-| GitHub | PRIMARY | TavallStudios/tavall-registry/README.md | 2026-10-19 11:24 AM PDT | Registry guide and exact-source CI profile are recorded by PR [#12](https://github.com/TavallStudios/tavall-registry/pull/12); staging root [#23](https://github.com/TavallStudios/tavall-registry/pull/23) remains independent. |
-| Notion | NOT_APPLICABLE | — | 2026-10-19 11:24 AM PDT | README files are not synchronized as Notion twins. |
+| GitHub | PRIMARY | TavallStudios/tavall-registry/README.md | 2026-10-19 11:26 AM PDT | PR #12 is merged; the guide and exact-source CI definition are current. Platform staging root PR #23 remains independent. |
+| Notion | NOT_APPLICABLE | — | 2026-10-19 11:26 AM PDT | README files are not synchronized as Notion twins. |
 
 ### Update History
 
 | Timestamp | Surface | Event | Location | Previous Location | Evidence | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-19 11:26 AM PDT | GitHub | UPDATED | TavallStudios/tavall-registry/README.md | Same path | [PR #12 merge commit](https://github.com/TavallStudios/tavall-registry/commit/8d35df86d16f4395c014f7a14624f8939c27182b) | Marked the guide as merged, kept the platform staging root independent, and recorded the local exact-source CI profile. |
 | 2026-09-27 12:29 PM PDT | GitHub | UPDATED | TavallStudios/tavall-registry/README.md | Same path | https://github.com/TavallStudios/tavall-registry/pull/11. | Reworked the public README to describe the current project, module boundary, usage, and documentation. |
 | 2026-09-29 5:17 PM PDT | GitHub | UPDATED | TavallStudios/tavall-registry/README.md | Same path | PR [#11](https://github.com/TavallStudios/tavall-registry/pull/11) | Added visible root module marker, classification, PR stack, pending documentation state, and CI-definition state. |
 | 2026-10-19 11:24 AM PDT | GitHub | UPDATED | TavallStudios/tavall-registry/README.md | Same path | PR [#12](https://github.com/TavallStudios/tavall-registry/pull/12) | Linked the Registry access guide, reconciled the current PR stack, and replaced the missing local CI state with the exact-source profile. |
