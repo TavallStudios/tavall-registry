@@ -1,5 +1,12 @@
 # Tavall Registry Access Styles
 
+> **Document Type:** Reference
+> **Status:** Current; GitHub-primary
+> **Authority:** `TavallStudios/tavall-registry@main` and `TavallStudios/tavall-docs@main`
+> **Owns:** Ranked consumer access patterns for the current `tavall-registry` API.
+> **Does Not Own:** Whether a runtime responsibility should use a Registry, or the owning runtime's lifecycle/thread contract.
+> **Notion:** No twin designated; reference documents are synchronized only by request or explicit policy.
+
 ## Purpose
 
 This guide ranks the ways consumer code owns and reads a Tavall Registry, and says which style belongs in production code, framework code, and tests.
@@ -9,6 +16,10 @@ The architecture rule for when to use a Registry at all lives in [tavall-docs `R
 The core rule:
 
 > One concrete registry subclass owns one runtime identity. Consumers reach it through Tavall DI and call its domain-named methods. Nothing else keeps a parallel map of the same identity.
+
+## Scope and ownership
+
+This guide owns the ranked consumer patterns for `AbstractRegistry` and its specialized variants. The current repository API owns their method behavior. Tavall Docs owns the rule for when Registry is the correct runtime-state boundary; the runtime or module using a Registry remains responsible for its lifecycle and thread ownership.
 
 ---
 
@@ -20,7 +31,7 @@ The core rule:
 | --- | --- |
 | `createRegistry(key, data)` | Publishes `data` under `key` if the key is absent (`putIfAbsent`). The first registration wins; `null` key or data throws `NullPointerException`. Returns the registry. |
 | `getRegistryData(key)` | The data for `key`, or `null`. |
-| `getRegistryKeyByData(data)` | Reverse lookup: the first key whose data equals `data`, or `null`. |
+| `getRegistryKeyByData(data)` | Reverse lookup: one key whose data equals `data`, or `null`. If multiple keys have equal data, iteration order does not define a stable winner. |
 | `getRegistryKeysAsSet/List/Collection()` | Unmodifiable snapshot of the keys. |
 | `getRegistryDataAsSet/List/Collection()` | Unmodifiable snapshot of the data. |
 | `hasRegistryKey(key)` / `hasRegistryData(data)` | Presence checks; `null` is never present. |
@@ -28,6 +39,12 @@ The core rule:
 The inherited `ConcurrentMap` operations (`put`, `remove`, `compute`, `clear`, ...) are part of the contract. They are the implementation mechanism for a registry subclass, not the consumer vocabulary.
 
 `AbstractIndexedRegistry<REG_KEY, REG_DATA>` adds serialized `registerIndexed`, `unregisterIndexed`, and `clearIndexed` for registries that maintain secondary lookups through idempotent `index`/`unindex` hooks, with rollback when index publication fails.
+
+It is optional. The existing reverse lookup and snapshot APIs cover common cases; add an indexed subclass only when a distinct maintained lookup is required by the owning domain or a measured access need.
+
+## Runtime and thread ownership
+
+The base Registry provides concurrent-map behavior, but it does not make stored values thread-safe or replace their runtime owner. For Bukkit/Paper-owned state, keep Bukkit objects and mutations on the Paper primary thread; do not use concurrent maps to move gameplay state to worker threads. A secondary index must follow its owning Registry's actual mutation and read synchronization boundary.
 
 ---
 
@@ -133,7 +150,12 @@ Third, and only when needed.
 
 ```java
 public final class SessionRegistry extends AbstractIndexedRegistry<UUID, Session> {
-    private final Map<String, UUID> byToken = new ConcurrentHashMap<>();
+    private final Map<String, UUID> byToken = new HashMap<>();
+
+    public synchronized Optional<Session> sessionByToken(String token) {
+        UUID sessionId = byToken.get(token);
+        return Optional.ofNullable(sessionId == null ? null : getRegistryData(sessionId));
+    }
 
     @Override
     protected void index(UUID sessionId, Session session) {
@@ -150,9 +172,10 @@ public final class SessionRegistry extends AbstractIndexedRegistry<UUID, Session
 ## Rules
 
 - Secondary structures are private implementation details of the one registry that owns the identity.
-- Mutate only through `registerIndexed`, `unregisterIndexed`, and `clearIndexed`, which serialize mutation and roll back a failed index publication.
+- Registry mutation hooks serialize index publication and rollback a failed index update. Expose secondary lookups through owner methods that follow the same synchronization boundary.
 - `index` and `unindex` must be idempotent.
 - Check first whether `getRegistryKeyByData` or a snapshot already answers the lookup.
+- Use a concurrent secondary index only when its actual readers/writers are concurrently accessible outside that Registry boundary; do not add one merely to accommodate thread-unsafe Bukkit state.
 
 ---
 
@@ -186,3 +209,24 @@ Registry subclasses may use `put`, `remove`, `compute`, and `clear` to implement
 - Snapshot immutability where consumers receive collections.
 - Unload/clear from the owning bootstrap.
 - For indexed registries: index/unindex idempotency and rollback on a failing `index`.
+
+---
+
+<details>
+<summary>Documentation Update State</summary>
+
+### Current Locations
+
+| Surface | Sync State | Location | Last Updated | Evidence |
+| --- | --- | --- | --- | --- |
+| GitHub | `WORKING` | [TavallStudios/tavall-registry/docs/REGISTRY_ACCESS_STYLES.md](https://github.com/TavallStudios/tavall-registry/blob/working/registry-access-guide-20260929/docs/REGISTRY_ACCESS_STYLES.md) | 2026-10-19 11:24 AM PDT | [PR #12](https://github.com/TavallStudios/tavall-registry/pull/12) remains the proposed source. |
+| Notion | `NOT_APPLICABLE` | No Notion twin designated | 2026-10-19 11:24 AM PDT | Reference docs are shared only by request or explicit policy. |
+
+### Update History
+
+| Timestamp | Surface | Event | Location | Previous Location | Evidence | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-29 1:23 PM PDT | GitHub | `CREATED` | `docs/REGISTRY_ACCESS_STYLES.md` | — | [Registry PR #12](https://github.com/TavallStudios/tavall-registry/pull/12) | Added the consumer-access guide in the existing PR. |
+| 2026-10-19 11:24 AM PDT | GitHub | `UPDATED` | `docs/REGISTRY_ACCESS_STYLES.md` | Same path | [Registry PR #12](https://github.com/TavallStudios/tavall-registry/pull/12) | Verified the current main API, clarified optional secondary indexes and synchronized thread ownership, and added documentation-state metadata. |
+
+</details>

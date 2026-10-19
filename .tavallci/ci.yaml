@@ -1,0 +1,55 @@
+version: 2
+
+source:
+  repository: TavallStudios/tavall-registry
+  provider: github
+
+build:
+  type: gradle
+  java: 25
+  gradle: 9.6.1
+
+resources:
+  mode: SYSTEM
+
+dependencies:
+  - kind: source
+    identity: TavallStudios/tavall-di
+    role: SHARED_DEP
+    selector: required-source
+    digest: d16c1de2c205f3c72fe63cd5a2765c3b1bf55368
+    sourceVersion: "1.2.1"
+    versionProperty: tavallDiVersion
+    substitutions: "org.tavall:tavall-di=:"
+  - kind: source
+    identity: TavallStudios/tavall-cache
+    role: SHARED_DEP
+    selector: required-source
+    digest: e6e78fdaf8cef80a488c7a661b8c51384e8780fe
+    sourceVersion: "1.0.0"
+    versionProperty: tavallVersion
+    substitutions: "org.tavall:abstract-cache-system=:abstract-cache-system"
+  - kind: source
+    identity: TavallStudios/tavall-logging
+    role: SHARED_DEP
+    selector: required-source
+    digest: 670cb249e5f532f442b8a6518d9dda50981b0d51
+    substitutions: "org.tavall:tavall-logging=:"
+  - kind: source
+    identity: TavallStudios/tavall-custom-enum-java
+    role: SHARED_DEP
+    selector: required-source
+    digest: 0bbf238d85ff517e452efaabd7644b2e9680ddd7
+    substitutions: "org.tavall:tavall-custom-enum-java=:"
+
+requiredChecks:
+  - quality
+
+checks:
+  quality:
+    executor: gradle
+    networkMode: PUBLIC
+    tasks:
+      - clean
+      - check
+      - assemble
