@@ -6,7 +6,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.tavall.dependency.DependencyAccess;
 import org.tavall.dependency.GenerationOwnedDependencyAccess;
-import org.tavall.dependency.annotations.DelegatesTo;
 import org.tavall.dependency.maps.DependencyMap;
 
 import java.util.ArrayList;
@@ -143,7 +142,9 @@ final class ModuleLifecycleRegistryIntegrationTest {
         String greet(String name);
     }
 
-    @DelegatesTo(IGreetingService.class)
+    // This fixture is registered by the module lifecycle context in its tests.
+    // Do not expose it to the package-scanning DI bootstrap used by the cache
+    // integration tests in the same package.
     public static final class GenerationGreetingService extends GenerationOwnedDependencyAccess
             implements IGreetingService, DependencyAccess<String> {
 
