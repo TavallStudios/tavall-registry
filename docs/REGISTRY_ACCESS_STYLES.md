@@ -1,21 +1,23 @@
 # Tavall Registry Access Styles
 
 > **Document Type:** Reference
-> **Status:** Current; GitHub-primary
+> **Status:** Current API reference; consumer-pattern ranking under review
 > **Authority:** `TavallStudios/tavall-registry@main` and `TavallStudios/tavall-docs@main`
-> **Owns:** Ranked consumer access patterns for the current `tavall-registry` API.
+> **Owns:** Verified current Registry API and candidate access patterns. Final preferred application shape remains under review.
 > **Does Not Own:** Whether a runtime responsibility should use a Registry, or the owning runtime's lifecycle/thread contract.
 > **Notion:** No twin designated; reference documents are synchronized only by request or explicit policy.
 
 ## Purpose
 
-This guide ranks the ways consumer code owns and reads a Tavall Registry, and says which style belongs in production code, framework code, and tests.
+This guide documents how the current Registry tool actually behaves and surveys supported consumer access options. The former ranking is not an approved universal implementation. Choose the approach justified by real domain ownership and existing consumers rather than treating a sample subclass as a required template.
 
 The architecture rule for when to use a Registry at all lives in [tavall-docs `REGISTRIES_CACHES_AND_REPOSITORIES.md`](https://github.com/TavallStudios/tavall-docs/blob/main/docs/quality/code-architecture/REGISTRIES_CACHES_AND_REPOSITORIES.md): a Registry owns runtime keyed identity (definitions, providers, strategies, active objects, sessions) for one runtime generation. This guide covers how to use `tavall-registry` once that decision is made.
 
-The core rule:
+The ownership rule:
 
-> One concrete registry subclass owns one runtime identity. Consumers reach it through Tavall DI and call its domain-named methods. Nothing else keeps a parallel map of the same identity.
+> One Registry owns a given runtime keyed identity. Consumers do not introduce competing maps, Service facades, or alternate Registry objects. Tavall DI manages Registry instances where these are managed collaborators.
+
+The public Java Tool API below is **verified**. The choice between a domain subclass and direct semantic Registry access is still **subject to design review**. Neither is mandatory merely because it appears in this guide.
 
 ## Scope and ownership
 
@@ -48,23 +50,25 @@ The base Registry provides concurrent-map behavior, but it does not make stored 
 
 ---
 
-## Production Ranking Summary
+## Current API-Backed Options (Ranking Under Review)
 
-| Rank | Style | Production use |
+| Option | Current verified behavior | Selection concern |
 | --- | --- | --- |
-| 1 | Domain registry subclass with domain-named methods, reached through `DependencyAccess` | Default |
-| 2 | Tavall-named API called directly on the registry | Small registries whose domain vocabulary is the registry vocabulary |
-| 3 | `AbstractIndexedRegistry` with owned secondary indexes | Only when one identity needs several maintained lookups |
-| 4 | Inherited `ConcurrentMap` operations | Inside the registry subclass or framework code only |
-| — | Consumer-owned maps, static registries, facade wrappers | Not allowed |
+| Domain `AbstractRegistry` subclass | Supported typed keys/values and domain methods | Justify the added domain methods; not mandatory for every Registry |
+| Direct Tavall-named `IAbstractRegistry` API | Supported semantic lookup/registration/snapshots | Appropriate when its existing vocabulary is sufficient |
+| `AbstractIndexedRegistry` | Supported secondary indexes and coordinated mutation hooks | Only when a required secondary lookup exists |
+| Inherited `ConcurrentMap` operations | Available in the base class and used for subclass mutation | Do not expose raw map access as an accidental consumer API |
+| Competing maps or forwarding services | No ownership justification | Reject |
+
+This is **not** a ranked, final class-construction prescription. Preserve existing supported access pending explicit migration decisions.
 
 ---
 
 # Style 1: Domain Registry Subclass Through Tavall DI
 
-## Production Rank
+## Selection Status
 
-First. Use this unless one of the later styles is clearly simpler.
+Supported API-backed option, **not a mandated default**. Use when domain-specific operations add meaningful ownership beyond renaming the same map lookup.
 
 ## Shape
 
@@ -82,9 +86,7 @@ public final class AdminDashboardModuleRegistry
     }
 
     public List<AdminDashboardModule> modules() {
-        return getRegistryDataAsList().stream()
-                .sorted(Comparator.comparing(Enum::ordinal))
-                .toList();
+        return getRegistryDataAsList();
     }
 }
 ```
@@ -93,8 +95,9 @@ The owning bootstrap/runtime creates the registry, fills it, and registers it in
 
 ```java
 @DelegatesTo
-public final class AdminDashboardProjectionResolver
-        implements DependencyAccess<ITavallOrganizationDataHandler, AdminDashboardModuleRegistry> {
+public final class AdminDashboardHandler
+        implements IAdminDashboardHandler,
+        DependencyAccess<ITavallOrganizationDataHandler, AdminDashboardModuleRegistry> {
 
     private AdminDashboardModuleRegistry getAdminDashboardModuleRegistry() {
         return getInstance().adminDashboardModuleRegistry();
@@ -102,7 +105,7 @@ public final class AdminDashboardProjectionResolver
 }
 ```
 
-## Why It Wins
+## When It Helps
 
 - The subclass name states which identity it owns, and its methods state the lookups consumers need (`module`, `ownerOf`), so callers never learn the key encoding.
 - `Optional` return types replace the `null` that `getRegistryData` returns for a missing key.
@@ -110,7 +113,7 @@ public final class AdminDashboardProjectionResolver
 
 ## Rules
 
-- Register through `createRegistry`. Because it is first-wins, a duplicate registration is ignored; when replacement is a real requirement, make it an explicit subclass method (`put`, or `remove` then `createRegistry`) and test it.
+- Use `createRegistry` for first-wins registration only (`putIfAbsent`). If replacement is required, use an explicit domain operation backed by supported Registry mutation (`put`, `replace`, or the indexed API as appropriate) and test it. Do not silently replace existing `put` with first-wins `createRegistry`.
 - Return snapshots (`getRegistryDataAsList()`, `getRegistryKeysAsSet()`) rather than the live map or its views.
 - The runtime that created the registry clears it on unload (`clear()`, or `clearIndexed()` for an indexed registry) before removing it from the dependency map.
 
@@ -118,9 +121,9 @@ public final class AdminDashboardProjectionResolver
 
 # Style 2: Tavall-Named API Directly
 
-## Production Rank
+## Selection Status
 
-Second.
+Supported semantic access; not inherently less preferred because no domain-specific wrapper was added.
 
 ## Shape
 
@@ -142,9 +145,9 @@ Consumers would repeat key construction, `null` checks, or ordering logic. Move 
 
 # Style 3: Indexed Registry
 
-## Production Rank
+## Selection Status
 
-Third, and only when needed.
+Supported specialized Registry variant; use only for real secondary lookup requirements.
 
 ## Shape
 
@@ -181,9 +184,9 @@ public final class SessionRegistry extends AbstractIndexedRegistry<UUID, Session
 
 # Style 4: Inherited `ConcurrentMap` Operations
 
-## Production Rank
+## Selection Status
 
-Framework and subclass internals only.
+Supported subclass mechanics; keep consumer access domain-oriented.
 
 Registry subclasses may use `put`, `remove`, `compute`, and `clear` to implement replacement, removal, and unload. Consumer code outside the registry does not call them: that bypasses the subclass's validation and, for indexed registries, desynchronizes the secondary indexes.
 
@@ -195,7 +198,7 @@ Registry subclasses may use `put`, `remove`, `compute`, and `clear` to implement
 | --- | --- | --- |
 | A consumer-owned `Map` of the same identity | Two owners drift; unload clears only one | The registry, Style 1 |
 | A static singleton registry | Bypasses Tavall DI replacement and generation cleanup | Register the instance in the `IDependencyMap` |
-| A `*Manager` or `*Service` that only forwards to the registry | Forwarding wrapper with no ownership (tavall-docs `CLASSES.md`) | Domain methods on the registry subclass |
+| A `*Manager` or `*Service` that only forwards to the registry | Forwarding wrapper with no ownership (tavall-docs `CLASSES.md`) | Use the current Registry's semantic API or genuinely owned domain methods |
 | Returning the live map or `keySet()`/`values()` views | Callers mutate or iterate registry state without the registry | Registry-named snapshots |
 | Relying on `createRegistry` to replace | It is first-wins; the new value is silently ignored | An explicit replacement method |
 | No clear on unload | The next generation resolves stale identities | Clear in the owning bootstrap/runtime |
