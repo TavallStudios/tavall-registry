@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/TavallStudios/tavall-docs/main/docs/schemas/tavallai-directory.schema.json",
+  "directoryType": "PROVENANCE",
+  "schemaVersion": 1,
+  "scope": {
+    "name": "tavall-registry",
+    "path": ".",
+    "repository": "TavallStudios/tavall-registry",
+    "type": "REPOSITORY_ROOT"
+  }
+}

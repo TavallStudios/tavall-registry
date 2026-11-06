@@ -1,0 +1,17 @@
+{
+  "activeRun": {
+    "acceptance": "Local27 tests from v3 only; source async initialization undergoing repair",
+    "ciStatus": "Direct legacyCI unauthorized; existing PR28 envlesscaller being verified, no hostedCI acceptance",
+    "entryTiming": "Initialized on continuation after discovering new isolated worktree had no metadata; no retroactive START claim for original intake or edits",
+    "gitHead": "9ff6c035769eae79947efd4cf78dec1af0a09e3f",
+    "ledgerRef": "/srv/dev-storage/workspaces/.tmp/universal-module-lifecycle-20261013/ledger.json",
+    "provider": "gemini-agy",
+    "remoteTaskId": "tb_e188c202-1663-4360-b584-fa0ddb0d0481",
+    "remoteWorkerTaskId": "wt_ded99236-8c19-4ec1-b2e8-35367653720d",
+    "runId": "gemini-registry-lifecycle-64a535dd-9015-4263-b49e-2b13074accc7",
+    "scope": "Registry lifecycle correctness; Pay isolated adapter slice delegated; CI existing envless caller reuse",
+    "status": "ACTIVE",
+    "threadId": "64a535dd-9015-4263-b49e-2b13074accc7",
+    "updatedAt": "2026-10-14T02:10:57.344194+00:00"
+  }
+}
